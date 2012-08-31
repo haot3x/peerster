@@ -22,32 +22,59 @@ ChatDialog::ChatDialog()
 	//
 	// You might change this into a read/write QTextEdit,
 	// so that the user can easily enter multi-line messages.
-	textline = new QLineEdit(this);
+    // Exercise 2. Tian modified the class
+	textline = new QTextEdit(this);
 
+    pushbutton = new QPushButton("Send Message (Ctrl+Enter)", this);
+    shortcut = new QShortcut(QKeySequence(tr("Ctrl+Return")), this);
+    
 	// Lay out the widgets to appear in the main window.
 	// For Qt widget and layout concepts see:
 	// http://doc.qt.nokia.com/4.7-snapshot/widgets-and-layouts.html
 	QVBoxLayout *layout = new QVBoxLayout();
 	layout->addWidget(textview);
 	layout->addWidget(textline);
+    layout->addWidget(pushbutton);
+    // Exercise 1. Tian added it to set focus on the textline without having to click in it first.
+    textline->setFocus();
+
 	setLayout(layout);
 
 	// Register a callback on the textline's returnPressed signal
 	// so that we can send the message entered by the user.
+    /* Tian: deprecated for return would create a new line
 	connect(textline, SIGNAL(returnPressed()),
 		this, SLOT(gotReturnPressed()));
+    */
+    connect(pushbutton, SIGNAL(clicked()),
+        this, SLOT(gotClicked()));
+    connect(shortcut, SIGNAL(activated()),
+        this, SLOT(gotClicked()));
 }
 
-void ChatDialog::gotReturnPressed()
+void ChatDialog::gotClicked()
 {
 	// Initially, just echo the string locally.
 	// Insert some networking code here...
-	qDebug() << "FIX: send message to other peers: " << textline->text();
-	textview->append(textline->text());
+	qDebug() << "FIX: send message to other peers: " << textline->toPlainText();
+	textview->append(textline->toPlainText());
 
 	// Clear the textline to get ready for the next input message.
 	textline->clear();
 }
+
+/* Tian: deprecated for return would create a new line, use gotClicked instead
+void ChatDialog::gotReturnPressed()
+{
+	// Initially, just echo the string locally.
+	// Insert some networking code here...
+	qDebug() << "FIX: send message to other peers: " << textline->toPlainText();
+	textview->append(textline->toPlainText());
+
+	// Clear the textline to get ready for the next input message.
+	textline->clear();
+}
+*/
 
 NetSocket::NetSocket()
 {
