@@ -7,6 +7,27 @@
 #include <QPushButton>// Tian added for click to send message
 #include <QKeySequence>// Tian added for shortcuts
 #include <QShortcut>// Tian added for shortcuts
+#include <QString>
+#include <QDataStream>
+#include <QVariant>
+#include <QHostAddress>
+
+class NetSocket : public QUdpSocket
+{
+	Q_OBJECT
+
+public:
+	NetSocket();
+    int getMyPortMin() { return myPortMin;}
+    int getMyPortMax() { return myPortMax;}
+
+	// Bind this socket to a Peerster-specific default port.
+	bool bind();
+
+private:
+	int myPortMin, myPortMax;
+};
+
 
 class ChatDialog : public QDialog
 {
@@ -20,26 +41,16 @@ public slots:
 	void gotReturnPressed();
     */
     void gotClicked();
+    void gotRecvMessage();
 
 private:
 	QTextEdit *textview;
 	QTextEdit *textline;
     QPushButton *pushbutton;
     QShortcut *shortcut;
+    NetSocket *sockRecv;
+
 };
 
-class NetSocket : public QUdpSocket
-{
-	Q_OBJECT
-
-public:
-	NetSocket();
-
-	// Bind this socket to a Peerster-specific default port.
-	bool bind();
-
-private:
-	int myPortMin, myPortMax;
-};
 
 #endif // PEERSTER_MAIN_HH

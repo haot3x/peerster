@@ -25,7 +25,7 @@ ChatDialog::ChatDialog()
     // Exercise 2. Tian modified the class
 	textline = new QTextEdit(this);
 
-    pushbutton = new QPushButton("Send Message (Ctrl+Enter)", this);
+    pushbutton = new QPushButton("Send Message (Ctrl+Return)", this);
     shortcut = new QShortcut(QKeySequence(tr("Ctrl+Return")), this);
     
 	// Lay out the widgets to appear in the main window.
@@ -46,6 +46,12 @@ ChatDialog::ChatDialog()
 	connect(textline, SIGNAL(returnPressed()),
 		this, SLOT(gotReturnPressed()));
     */
+    //NetSocket sock;
+    sockRecv = new NetSocket();
+	if (!sockRecv->bind())
+		exit(1);
+    connect(sockRecv, SIGNAL(readyRead()),
+        this, SLOT(gotRecvMessage()));
     connect(pushbutton, SIGNAL(clicked()),
         this, SLOT(gotClicked()));
     connect(shortcut, SIGNAL(activated()),
@@ -56,12 +62,59 @@ void ChatDialog::gotClicked()
 {
 	// Initially, just echo the string locally.
 	// Insert some networking code here...
-	qDebug() << "FIX: send message to other peers: " << textline->toPlainText();
+    
+    // Exercise 3. Tian added networking code here
+    // Build map
+    QMap<QString, QString> *mapStrStr = new QMap<QString, QString>();
+    mapStrStr->insert(tr("ChatText"), textline->toPlainText());
+
+    // Serialize map to an instance of QByteArray
+    QByteArray *bytearrayToSend = new QByteArray();
+    QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
+    bytearrayStreamOut << (*mapStrStr);
+
+    // send the datagram to 4 ports via local host
+    NetSocket sockSend;
+    for (int destPort =  sockSend.getMyPortMin(); destPort <= sockSend.getMyPortMax(); destPort++)
+    {
+        qint64 int64Status = sockSend.writeDatagram(*bytearrayToSend, QHostAddress::LocalHost, destPort);
+        if (int64Status == -1) exit(1); 
+        qDebug() << "sent to " << (quint16)(destPort) << " SIZE:" << int64Status;
+    }
+
+    
+	// qDebug() << "FIX: send message to other peers: " << textline->toPlainText();
 	textview->append(textline->toPlainText());
 
 	// Clear the textline to get ready for the next input message.
 	textline->clear();
 }
+
+void ChatDialog::gotRecvMessage()
+{
+    while (sockRecv->hasPendingDatagrams())
+    {
+        // read datagram into an instance of QByteArray
+        QByteArray *bytearrayRecv = new QByteArray();
+        bytearrayRecv->resize(sockRecv->pendingDatagramSize());
+        QHostAddress senderAddr;
+        quint16 senderPort;
+        qint64 int64Status = sockRecv->readDatagram(bytearrayRecv->data(), bytearrayRecv->size(), 
+            &senderAddr, &senderPort);
+        if (int64Status == -1) exit(1); 
+
+        // de-serialize
+        QMap<QString, QString> mapStrStrRecv; 
+        QDataStream bytearrayStreamIn(bytearrayRecv, QIODevice::ReadOnly);
+        bytearrayStreamIn >> mapStrStrRecv;
+        qDebug() << "recv the map: " << mapStrStrRecv;
+
+        // add string to the chat-log in the ChatDialog
+        QString stringRecv(mapStrStrRecv.take("ChatText"));
+        textview->append(stringRecv);
+    }
+}
+
 
 /* Tian: deprecated for return would create a new line, use gotClicked instead
 void ChatDialog::gotReturnPressed()
@@ -93,6 +146,7 @@ bool NetSocket::bind()
 {
 	// Try to bind to each of the range myPortMin..myPortMax in turn.
 	for (int p = myPortMin; p <= myPortMax; p++) {
+        // Tian added IP addr. here
 		if (QUdpSocket::bind(p)) {
 			qDebug() << "bound to UDP port " << p;
 			return true;
@@ -114,9 +168,11 @@ int main(int argc, char **argv)
 	dialog.show();
 
 	// Create a UDP network socket
+    /* Tian: Deprecated for no use here.
 	NetSocket sock;
 	if (!sock.bind())
 		exit(1);
+    */
 
 	// Enter the Qt main loop; everything else is event driven
 	return app.exec();
