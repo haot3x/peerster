@@ -11,6 +11,14 @@
 #include <QDataStream>
 #include <QVariant>
 #include <QHostAddress>
+#include <QKeyEvent>
+#include <QHostInfo>
+#include <QtGlobal>
+#include <QDateTime>
+#include <QTimer>
+#include <QVector>
+#include <QSignalMapper>
+#include <QThread>
 
 class NetSocket : public QUdpSocket
 {
@@ -20,15 +28,16 @@ public:
 	NetSocket();
     int getMyPortMin() { return myPortMin;}
     int getMyPortMax() { return myPortMax;}
+    int getMyPort() { return myPort;}
 
 	// Bind this socket to a Peerster-specific default port.
 	bool bind();
 
 private:
-	int myPortMin, myPortMax;
+	int myPort, myPortMin, myPortMax;
 };
 
-
+ 
 class ChatDialog : public QDialog
 {
 	Q_OBJECT
@@ -37,20 +46,23 @@ public:
 	ChatDialog();
 
 public slots:
-    /* Tian: deprecated for return would create a new line. use gotClicked() instead.
 	void gotReturnPressed();
-    */
-    void gotClicked();
     void gotRecvMessage();
+    void fwdMessage(QString fwdInfo);
 
 private:
 	QTextEdit *textview;
-	QTextEdit *textline;
-    QPushButton *pushbutton;
-    QShortcut *shortcut;
+	QTextEdit *textedit;
     NetSocket *sockRecv;
-
+    bool eventFilter(QObject *obj, QEvent *ev);
+    int randomOriginID;
+    QVariantMap *recvMessageMap;
+    QVariantMap *updateStatusMap;
+    quint32 SeqNo;
+    QTimer *timerForAck;
+    QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
 };
 
+   
 
 #endif // PEERSTER_MAIN_HH
