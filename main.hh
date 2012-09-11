@@ -19,6 +19,7 @@
 #include <QVector>
 #include <QSignalMapper>
 #include <QThread>
+#include <QMapIterator>
 
 class NetSocket : public QUdpSocket
 {
