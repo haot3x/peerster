@@ -50,6 +50,7 @@ public slots:
 	void gotReturnPressed();
     void gotRecvMessage();
     void fwdMessage(QString fwdInfo);
+    void antiEntropy();
 
 private:
 	QTextEdit *textview;
@@ -60,7 +61,9 @@ private:
     QVariantMap *recvMessageMap;
     QVariantMap *updateStatusMap;
     quint32 SeqNo;
+    QString *myOrigin;
     QTimer *timerForAck;
+    QTimer *timerForAntiEntropy;
     QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
 };
 

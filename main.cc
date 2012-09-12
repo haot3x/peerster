@@ -12,6 +12,7 @@ ChatDialog::ChatDialog()
     // Tian: Generate partial origin with rand num
     qsrand(time(0));
     randomOriginID = qrand();
+    myOrigin = new QString(QHostInfo::localHostName() + QString::number(randomOriginID));
     // Tian: Initialize SeqNo;
     SeqNo = 1;
     // Tian: Initialize recvMessageMap;
@@ -55,6 +56,32 @@ ChatDialog::ChatDialog()
 		exit(1);
     connect(sockRecv, SIGNAL(readyRead()),
         this, SLOT(gotRecvMessage()));
+    
+    // Anti-entropy
+    // Set timer to send status message 
+    timerForAntiEntropy = new QTimer(this);
+    connect(timerForAntiEntropy, SIGNAL(timeout()), this, SLOT(antiEntropy()));
+    timerForAntiEntropy->start(10000);
+}
+
+void ChatDialog::antiEntropy()
+{
+    if (updateStatusMap->contains(*myOrigin))
+    {
+        // Pick up a random port in a line topo
+        quint16 destPort = sockRecv->getMyPort();
+        if (destPort == sockRecv->getMyPortMin()) destPort = destPort + 1;
+        else if (destPort == sockRecv->getMyPortMax()) destPort = destPort - 1;
+        else destPort = qrand()%2 == 0?destPort-1:destPort+1;
+
+        // Send the message
+        QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(updateStatusMap->value(*myOrigin).toInt() + 1)
+            + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
+            + "[-PORTIS>]" + QString::number(destPort)
+            + "[-METYPE>]" + "SM";
+        fwdMessage(fwdInfo);
+        qDebug() << "antiEntropy triggered!!!";
+    }
 }
 
 
@@ -83,11 +110,9 @@ void ChatDialog::gotReturnPressed()
     // Update updateStatusMap
     updateStatusMap->insert(rumorMessage->value("Origin").toString(), rumorMessage->value("SeqNo").toInt());
     
-    // DEBUG set my own port to DEBUG
-    // TODO revise it 
+    // Send the message
     QString fwdInfo = rumorMessage->value("Origin").toString() + "[Ori||Seq]" + rumorMessage->value("SeqNo").toString() 
         + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
-        //+ "[-PORTIS>]" + QString::number(sockRecv->getMyPort())
         + "[-PORTIS>]" + QString::number(destPort)
         + "[-METYPE>]" + "GM";
     fwdMessage(fwdInfo);
@@ -140,7 +165,7 @@ void ChatDialog::fwdMessage(QString fwdInfo)
             connect(timerForAck, SIGNAL(timeout()), mapper, SLOT(map()));
             connect(mapper, SIGNAL(mapped(QString)), this, SLOT(fwdMessage(QString)));
             mapper->setMapping(timerForAck, fwdInfo);
-            timerForAck->start(3000);
+            timerForAck->start(2000);
         }
         else
             ackHist->remove(ackHist->indexOf(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1)));
@@ -165,8 +190,7 @@ void ChatDialog::fwdMessage(QString fwdInfo)
         qDebug() << mType << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
     }
 
-    // qDebug() << (ackHist->contains(OriSeq) || ackHist->contains(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1)));
-    /*
+    /* deprecated, timer only for gossip message
     if (!(ackHist->contains(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1))))
     {
         // Serialize 
@@ -254,7 +278,7 @@ void ChatDialog::gotRecvMessage()
                                 + "[-METYPE>]" + "GM";
                         fwdMessage(fwdInfo);
                     }
-                    else ; // TODO cease. The problem is that sender would resend if there is no ack
+                    else {; } // Cease
                     //qDebug() << "pop pop haha ";
                 }
                 else if (mySeqNo + 1 > recvSeqNo)
