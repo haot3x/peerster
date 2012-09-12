@@ -99,15 +99,17 @@ void ChatDialog::gotReturnPressed()
 
 void ChatDialog::fwdMessage(QString fwdInfo)
 {
+    // qDebug() << fwdInfo;
     // Parse fwdInfo
     QString OriSeq = fwdInfo.left(fwdInfo.lastIndexOf("[-ADDRIS>]"));
-    //qDebug() << "OriSeq: " << OriSeq;
+    // qDebug() << "OriSeq: " << OriSeq;
     QHostAddress host(fwdInfo.mid(fwdInfo.lastIndexOf("[-ADDRIS>]") + 10, fwdInfo.lastIndexOf("[-PORTIS>]") - fwdInfo.lastIndexOf("[-ADDRIS>]")-10)); 
     //qDebug() << "host:" << host;
     quint16 port = fwdInfo.mid(fwdInfo.lastIndexOf("[-PORTIS>]") + 10, fwdInfo.lastIndexOf("[-METYPE>]") - fwdInfo.lastIndexOf("[-PORTIS>]")-10).toInt(); 
     //qDebug() << "port:" << port;
     QString mType = fwdInfo.right(2);
     QString OriginSM = fwdInfo.left(fwdInfo.lastIndexOf("[Ori||Seq]"));
+    if (OriginSM == "") exit(-1);
     quint32 SeqNoSM = fwdInfo.mid(fwdInfo.lastIndexOf("[Ori||Seq]")+10, fwdInfo.lastIndexOf("[-ADDRIS>]") - fwdInfo.lastIndexOf("[Ori||Seq]") - 10).toInt();
     //qDebug() << "OriginSM: " << OriginSM;
     //qDebug() << "SeqNoSM: " << SeqNoSM;
@@ -116,6 +118,32 @@ void ChatDialog::fwdMessage(QString fwdInfo)
     if (mType == "GM")
     {
         message = new QVariantMap(recvMessageMap->value(OriSeq).toMap());
+        
+        // Serialize 
+        QByteArray *bytearrayToSend = new QByteArray();
+        QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
+        bytearrayStreamOut << (*message);
+
+        // Send the datagram 
+        qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
+        if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
+        // qDebug() << (*message);
+        qDebug() << mType << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
+        //qDebug() << "send the map: " << *message;
+
+        if (!(ackHist->contains(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1))))
+        {
+            // Set timer to receive the remote peer's acknowledgment
+            QSignalMapper *mapper = new QSignalMapper(this);
+            timerForAck= new QTimer(this);
+            timerForAck->setSingleShot(true);
+            connect(timerForAck, SIGNAL(timeout()), mapper, SLOT(map()));
+            connect(mapper, SIGNAL(mapped(QString)), this, SLOT(fwdMessage(QString)));
+            mapper->setMapping(timerForAck, fwdInfo);
+            timerForAck->start(3000);
+        }
+        else
+            ackHist->remove(ackHist->indexOf(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1)));
     }
     else if (mType == "SM")
     {
@@ -124,10 +152,22 @@ void ChatDialog::fwdMessage(QString fwdInfo)
         //qDebug() << wantValue;
         message = new QVariantMap();
         message->insert("Want", wantValue);
+        
+        // Serialize 
+        QByteArray *bytearrayToSend = new QByteArray();
+        QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
+        bytearrayStreamOut << (*message);
+
+        // Send the datagram 
+        qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
+        if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
+        // qDebug() << (*message);
+        qDebug() << mType << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
     }
 
     // qDebug() << (ackHist->contains(OriSeq) || ackHist->contains(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1)));
-    if (!(ackHist->contains(OriSeq) || ackHist->contains(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1))))
+    /*
+    if (!(ackHist->contains(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1))))
     {
         // Serialize 
         QByteArray *bytearrayToSend = new QByteArray();
@@ -137,6 +177,7 @@ void ChatDialog::fwdMessage(QString fwdInfo)
         // Send the datagram 
         qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
         if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
+        // qDebug() << (*message);
         qDebug() << mType << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
 
         // Set timer to receive the remote peer's acknowledgment
@@ -154,14 +195,15 @@ void ChatDialog::fwdMessage(QString fwdInfo)
         //qDebug() << "Send over! \n";
     }
     //else 
-        //ackHist->remove(ackHist->lastIndexOf(OriSeq));
+        //ackHist->remove(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1));
+    */
 }
+
 
 void ChatDialog::gotRecvMessage()
 {
-    while (sockRecv->hasPendingDatagrams())
+    //while (sockRecv->hasPendingDatagrams())
     {
-        qDebug() << "Received new message!"
         // read datagram into an instance of QByteArray
         QByteArray *bytearrayRecv = new QByteArray();
         bytearrayRecv->resize(sockRecv->pendingDatagramSize());
@@ -175,18 +217,19 @@ void ChatDialog::gotRecvMessage()
         QVariantMap recvMessage;
         QDataStream bytearrayStreamIn(bytearrayRecv, QIODevice::ReadOnly);
         bytearrayStreamIn >> recvMessage;
-        //qDebug() << "recv the map: " << recvMessage;
+        // qDebug() << "recv the map: " << recvMessage;
 
         // treat acknowledgment (namely, status message) and gossip chat message differently.
         // If it is an status message (SM), namely acknowledgment
         if (recvMessage.contains("Want")) 
         {
+            qDebug() << "Received new SM from " << senderPort;
             QMapIterator <QString, QVariant> iter(recvMessage.value("Want").toMap());
             iter.next();
             QString recvOrigin = iter.key();
             quint32 recvSeqNo = iter.value().toInt();
-            //qDebug() << "Want recvOrigin = " << recvOrigin;
-           // qDebug() << "Want recvSeqNo= " << recvSeqNo;
+            // qDebug() << "Want recvOrigin = " << recvOrigin;
+            // qDebug() << "Want recvSeqNo= " << recvSeqNo;
 
             ackHist->append(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo));
             
@@ -205,7 +248,7 @@ void ChatDialog::gotRecvMessage()
                         else destPort = qrand()%2 == 0?destPort-1:destPort+1;
 
                         // forward
-                        QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
+                        QString fwdInfo = recvOrigin + "[Ori||Seq]" + updateStatusMap->value(recvOrigin).toString()
                                 + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
                                 + "[-PORTIS>]" + QString::number(destPort)
                                 + "[-METYPE>]" + "GM";
@@ -218,11 +261,13 @@ void ChatDialog::gotRecvMessage()
                 {    
                     // You need new message
                     // Ack
+                    /*
                     QString fwdInfo = recvOrigin  + "[Ori||Seq]" + QString::number(recvSeqNo) // TODO mySeqNo or recvSeqNo?
                             + "[-ADDRIS>]" + senderAddr.toString() 
                             + "[-PORTIS>]" + QString::number(senderPort) 
                             + "[-METYPE>]" + "SM"; 
                     fwdMessage(fwdInfo);
+                    */
                     
                     // Send my gossip message one by one
                     for (quint32 i = recvSeqNo; i <= mySeqNo; i++)
@@ -238,11 +283,13 @@ void ChatDialog::gotRecvMessage()
                 {
                     // I need new message
                     // ACK
+                    /*
                     QString fwdInfo = recvOrigin  + "[Ori||Seq]" + QString::number(recvSeqNo) // TODO mySeqNo or recvSeqNo?
                             + "[-ADDRIS>]" + senderAddr.toString() 
                             + "[-PORTIS>]" + QString::number(senderPort) 
                             + "[-METYPE>]" + "SM"; 
                     fwdMessage(fwdInfo);
+                    */
 
                     // Send my status message 
                     QString fwdInfo2 = recvOrigin + "[Ori||Seq]" + QString::number(mySeqNo + 1) 
@@ -254,25 +301,31 @@ void ChatDialog::gotRecvMessage()
             } 
             else // not contain orgin 
             {
+                //qDebug() << "Want & not contain origin" ;
+                //qDebug() << "recvOrigin " << recvOrigin;
                 // I need new message
                 // ACK
+                /*
                 QString fwdInfo = recvOrigin  + "[Ori||Seq]" + QString::number(recvSeqNo) // TODO mySeqNo or recvSeqNo?
                             + "[-ADDRIS>]" + senderAddr.toString() 
                             + "[-PORTIS>]" + QString::number(senderPort) 
                             + "[-METYPE>]" + "SM"; 
                 fwdMessage(fwdInfo);
+                */
 
-                QString fwdInfo2 = recvMessage.value("Origin").toString() + "[Ori||Seq]" + QString::number(1) 
+                QString fwdInfo2 = recvOrigin + "[Ori||Seq]" + QString::number(1) 
                             + "[-ADDRIS>]" + senderAddr.toString()  
                             + "[-PORTIS>]" + QString::number(senderPort) 
                             + "[-METYPE>]" + "SM"; 
                 fwdMessage(fwdInfo2);
             }
         }
-        else // It is a Gossip Message (GM)
+        else if (recvMessage.contains("ChatText")) // It is a Gossip Message (GM)
         {
+            qDebug() << "received new GM from " << senderPort;
+            //qDebug() << recvMessage;
             QString recvOrigin = recvMessage.value("Origin").toString();
-            int recvSeqNo = recvMessage.value("SeqNo").toInt();
+            quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
             //qDebug() << "recvOrigin: " << recvOrigin;
             //qDebug() << "recvSeqNo: " << recvSeqNo;
             //qDebug() << "senderPor: " << senderPort;
@@ -286,7 +339,7 @@ void ChatDialog::gotRecvMessage()
 
             if (updateStatusMap->contains(recvOrigin))
             {
-                int mySeqNo = updateStatusMap->value(recvOrigin).toInt();
+                quint32 mySeqNo = updateStatusMap->value(recvOrigin).toInt();
                 //qDebug() << "mySeqNo = " << mySeqNo ;
                 if (mySeqNo + 1 == recvSeqNo)
                 {
@@ -358,6 +411,11 @@ void ChatDialog::gotRecvMessage()
                     fwdMessage(fwdInfo);
                 }
             }
+        }
+        else 
+        {
+            qDebug() << "not normal messages";
+            exit(-1);
         }
     }
 
