@@ -19,6 +19,7 @@ ChatDialog::ChatDialog()
     recvMessageMap = new QVariantMap(); 
     updateStatusMap = new QVariantMap(); 
     ackHist = new QVector<QString>();
+    peerList = new QList<Peer>();
 
 	setWindowTitle("Peerster");
 
@@ -27,7 +28,41 @@ ChatDialog::ChatDialog()
 	textview = new QTextEdit(this);
 	textview->setReadOnly(true);
 
-	// Small text-entry box the user can enter messages.
+    addAddrPort = new QLineEdit();
+    addrPortListView = new QListView();
+    addrPortListView->setModel(new QStringListModel(addrPortStrList));
+    
+    // Register a callback on the textedit's returnPressed signal
+	// so that we can send the message entered by the user.
+    //NetSocket sock;
+    sockRecv = new NetSocket();
+	if (!sockRecv->bind())
+		exit(1);
+    connect(sockRecv, SIGNAL(readyRead()),
+        this, SLOT(gotRecvMessage()));
+    
+    // If there are CLI arguments to set hostname:port or ipaddr:port, add them
+    for (int i = 1; i < qApp->argc(); i++)
+    {
+        qDebug() << qApp->argv()[i];
+        QString inputAddrPort = qApp->argv()[i];
+        QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+    
+        QHostInfo::lookupHost(addr, 
+            this, SLOT(lookedUpBeforeInvoke(QHostInfo)));
+    }
+
+
+    // add local four ports
+    for (quint16 q = sockRecv->getMyPortMin(); q <= sockRecv->getMyPortMax(); q++)
+    {
+        Peer peer(QHostInfo::localHostName(), QHostAddress("127.0.0.1"), q);
+        peerList->append(peer);
+        addrPortStrList.append(QHostAddress("127.0.0.1").toString() + ":" + QString::number(q));
+        ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+    }
+
+    // Small text-entry box the user can enter messages.
 	// This widget normally expands only horizontally,
 	// leaving extra vertical space for the textview widget.
 	//
@@ -40,44 +75,116 @@ ChatDialog::ChatDialog()
 	// Lay out the widgets to appear in the main window.
 	// For Qt widget and layout concepts see:
 	// http://doc.qt.nokia.com/4.7-snapshot/widgets-and-layouts.html
-	QVBoxLayout *layout = new QVBoxLayout();
-	layout->addWidget(textview);
-	layout->addWidget(textedit);
+	QGridLayout *layout = new QGridLayout();
+	layout->addWidget(textview, 0, 0, 13, 1);
+	layout->addWidget(textedit, 14, 0, 1, 1);
+    layout->addWidget(addrPortListView, 2, 18, -1, 1);
+    layout->addWidget(addAddrPort, 0, 18, 1, 1); 
     // Exercise 1. Tian added it to set focus on the textedit without having to click in it first.
+    this->resize(500, 300);
     textedit->setFocus();
 
 	setLayout(layout);
 
-	// Register a callback on the textedit's returnPressed signal
-	// so that we can send the message entered by the user.
-    //NetSocket sock;
-    sockRecv = new NetSocket();
-	if (!sockRecv->bind())
-		exit(1);
-    connect(sockRecv, SIGNAL(readyRead()),
-        this, SLOT(gotRecvMessage()));
-    
     // Anti-entropy
     // Set timer to send status message 
     timerForAntiEntropy = new QTimer(this);
-    connect(timerForAntiEntropy, SIGNAL(timeout()), this, SLOT(antiEntropy()));
+    connect(timerForAntiEntropy, SIGNAL(timeout()), 
+        this, SLOT(antiEntropy()));
     timerForAntiEntropy->start(10000);
+
+    // Add hostname:port or ipaddr:port 
+    connect(addAddrPort, SIGNAL(returnPressed()),
+        this, SLOT(addrPortAdded()));
+
 }
+
+void ChatDialog::lookedUp(const QHostInfo& host)
+{
+    // Check whether there are hosts
+    if (host.error() != QHostInfo::NoError)
+    {
+        qDebug() << "Lookup failed:" << host.errorString();
+        return ;
+    }
+    foreach (const QHostAddress &address, host.addresses())
+    {
+        qDebug() << "Found address:" << address.toString();
+
+        QString inputAddrPort = addAddrPort->text();
+        QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+        quint16 port = inputAddrPort.right(inputAddrPort.length() - inputAddrPort.lastIndexOf(":") - 1).toInt();
+        
+        // If the port is specified
+        if (port != 0)
+        {
+            // update it to the peer list
+            Peer peer(addr, address, port);
+            peerList->append(peer);
+
+            // update it to the list view
+            addrPortStrList.append(address.toString() + ":" + QString::number(port));
+            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+
+            addAddrPort->clear();
+        }
+    }
+}
+
+void ChatDialog::lookedUpBeforeInvoke(const QHostInfo& host)
+{
+    static int times = 1;
+    // Check whether there are hosts
+    if (host.error() != QHostInfo::NoError)
+    {
+        qDebug() << "Lookup failed:" << host.errorString();
+        return ;
+    }
+    foreach (const QHostAddress &address, host.addresses())
+    {
+        qDebug() << "Found address:" << address.toString();
+
+        QString inputAddrPort = qApp->argv()[times];
+        QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+        quint16 port = inputAddrPort.right(inputAddrPort.length() - inputAddrPort.lastIndexOf(":") - 1).toInt();
+        
+        // If the port is specified
+        if (port != 0)
+        {
+            // update it to the peer list
+            Peer peer(addr, address, port);
+            peerList->append(peer);
+
+            // update it to the list view
+            addrPortStrList.append(address.toString() + ":" + QString::number(port));
+            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+
+        }
+    }
+}
+    
+
+void ChatDialog::addrPortAdded()
+{
+    QString inputAddrPort = addAddrPort->text();
+    QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+    // qDebug() << addr << ":" << port;
+    
+    QHostInfo::lookupHost(addr, 
+        this, SLOT(lookedUp(QHostInfo)));
+} 
 
 void ChatDialog::antiEntropy()
 {
     if (updateStatusMap->contains(*myOrigin))
     {
-        // Pick up a random port in a line topo
-        quint16 destPort = sockRecv->getMyPort();
-        if (destPort == sockRecv->getMyPortMin()) destPort = destPort + 1;
-        else if (destPort == sockRecv->getMyPortMax()) destPort = destPort - 1;
-        else destPort = qrand()%2 == 0?destPort-1:destPort+1;
+        // Random pick up a peer from peerlist
+                    Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
         // Send the message
         QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(updateStatusMap->value(*myOrigin).toInt() + 1)
-            + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
-            + "[-PORTIS>]" + QString::number(destPort)
+            + "[-ADDRIS>]" + destPeer.ipaddr.toString()
+            + "[-PORTIS>]" + QString::number(destPeer.port)
             + "[-METYPE>]" + "SM";
         fwdMessage(fwdInfo);
         qDebug() << "antiEntropy triggered!!!";
@@ -98,11 +205,8 @@ void ChatDialog::gotReturnPressed()
     rumorMessage->insert("Origin", QHostInfo::localHostName() + QString::number(randomOriginID));
     rumorMessage->insert("SeqNo", SeqNo);
     
-    // Pick up a random port in a line topo
-    quint16 destPort = sockRecv->getMyPort();
-    if (destPort == sockRecv->getMyPortMin()) destPort = destPort + 1;
-    else if (destPort == sockRecv->getMyPortMax()) destPort = destPort - 1;
-    else destPort = qrand()%2 == 0?destPort-1:destPort+1;
+    // Pick up a destination from peer list
+    Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
     // Update recvMessageMap
     recvMessageMap->insert(rumorMessage->value("Origin").toString() + "[Ori||Seq]" + rumorMessage->value("SeqNo").toString(), *rumorMessage);
@@ -112,12 +216,12 @@ void ChatDialog::gotReturnPressed()
     
     // Send the message
     QString fwdInfo = rumorMessage->value("Origin").toString() + "[Ori||Seq]" + rumorMessage->value("SeqNo").toString() 
-        + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
-        + "[-PORTIS>]" + QString::number(destPort)
+        + "[-ADDRIS>]" + destPeer.ipaddr.toString()
+        + "[-PORTIS>]" + QString::number(destPeer.port)
         + "[-METYPE>]" + "GM";
     fwdMessage(fwdInfo);
 
-    textview->append(textedit->toPlainText());
+    textview->append("me > " + textedit->toPlainText());
     textedit->clear();
     SeqNo++;
 }
@@ -237,6 +341,24 @@ void ChatDialog::gotRecvMessage()
             &senderAddr, &senderPort);
         if (int64Status == -1) exit(1); 
 
+        // Whether should it be added to peer list as a new peer?
+        bool containsPeer = false;
+        for (int i = 0; i < peerList->size(); i++)
+        {
+            if (peerList->at(i).ipaddr == senderAddr && peerList->at(i).port == senderPort)
+                containsPeer = true;
+        }
+        if (containsPeer == false)
+        {
+            // update it to the peer list
+            Peer peer(senderAddr.toString(), senderAddr, senderPort);
+            peerList->append(peer);
+
+            // update it to the list view
+            addrPortStrList.append(senderAddr.toString() + ":" + QString::number(senderPort));
+            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+        }
+
         // de-serialize
         QVariantMap recvMessage;
         QDataStream bytearrayStreamIn(bytearrayRecv, QIODevice::ReadOnly);
@@ -265,16 +387,13 @@ void ChatDialog::gotRecvMessage()
                 {
                     if (qrand()%2 == 0)
                     {
-                        // Pick up a random port in a line topo
-                        quint16 destPort = sockRecv->getMyPort();
-                        if (destPort == sockRecv->getMyPortMin()) destPort = destPort + 1;
-                        else if (destPort == sockRecv->getMyPortMax()) destPort = destPort - 1;
-                        else destPort = qrand()%2 == 0?destPort-1:destPort+1;
+                        // Random pick up a peer from peerlist
+                        Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
                         // forward
                         QString fwdInfo = recvOrigin + "[Ori||Seq]" + updateStatusMap->value(recvOrigin).toString()
-                                + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
-                                + "[-PORTIS>]" + QString::number(destPort)
+                                + "[-ADDRIS>]" + destPeer.ipaddr.toString() 
+                                + "[-PORTIS>]" + QString::number(destPeer.port)
                                 + "[-METYPE>]" + "GM";
                         fwdMessage(fwdInfo);
                     }
@@ -352,7 +471,7 @@ void ChatDialog::gotRecvMessage()
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
             //qDebug() << "recvOrigin: " << recvOrigin;
             //qDebug() << "recvSeqNo: " << recvSeqNo;
-            //qDebug() << "senderPor: " << senderPort;
+            //qDebug() << "senderPort: " << senderPort;
 
             //ACK
             QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo+1) 
@@ -373,18 +492,15 @@ void ChatDialog::gotRecvMessage()
                     updateStatusMap->insert(recvOrigin, QString::number(recvSeqNo));
 
                     // display
-                    textview->append(recvMessage.value("ChatText").toString());
+                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
                     
-                    // Pick up a random port in a line topo
-                    quint16 destPort = sockRecv->getMyPort();
-                    if (destPort == sockRecv->getMyPortMin()) destPort = destPort + 1;
-                    else if (destPort == sockRecv->getMyPortMax()) destPort = destPort - 1;
-                    else destPort = qrand()%2 == 0?destPort-1:destPort+1;
+                    // Random pick up a peer from peer list
+                    Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
                     // forward
                     QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
-                            + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
-                            + "[-PORTIS>]" + QString::number(destPort)
+                            + "[-ADDRIS>]" + destPeer.ipaddr.toString() 
+                            + "[-PORTIS>]" + QString::number(destPeer.port)
                             + "[-METYPE>]" + "GM";
                     fwdMessage(fwdInfo);
                 }
@@ -409,18 +525,15 @@ void ChatDialog::gotRecvMessage()
                     recvMessageMap->insert(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo), recvMessage);
                     updateStatusMap->insert(recvOrigin, QString::number(recvSeqNo));
 
-                    textview->append(recvMessage.value("ChatText").toString());
+                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
                 
-                    // Pick up a random port in a line topo
-                    quint16 destPort = sockRecv->getMyPort();
-                    if (destPort == sockRecv->getMyPortMin()) destPort = destPort + 1;
-                    else if (destPort == sockRecv->getMyPortMax()) destPort = destPort - 1;
-                    else destPort = qrand()%2 == 0?destPort-1:destPort+1;
+                    // Random pick up a peer from peerlist
+                    Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
                     // forward
                     QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
-                            + "[-ADDRIS>]" + QHostAddress("127.0.0.1").toString()
-                            + "[-PORTIS>]" + QString::number(destPort)
+                            + "[-ADDRIS>]" + destPeer.ipaddr.toString()
+                            + "[-PORTIS>]" + QString::number(destPeer.port)
                             + "[-METYPE>]" + "GM";
                     fwdMessage(fwdInfo);
                 }
@@ -498,19 +611,19 @@ bool NetSocket::bind()
 
 int main(int argc, char **argv)
 {
+    // Read command line arguments
+    // QCoreApplication app(argc, argv);
+    // QStringList args = QCoreApplication::arguments();
+
+    
 	// Initialize Qt toolkit
 	QApplication app(argc,argv);
+
+    // qDebug() << argc;
 
 	// Create an initial chat dialog window
 	ChatDialog dialog;
 	dialog.show();
-
-	// Create a UDP network socket
-    /* Tian: Deprecated for no use here.
-	NetSocket sock;
-	if (!sock.bind())
-		exit(1);
-    */
 
 	// Enter the Qt main loop; everything else is event driven
 	return app.exec();
