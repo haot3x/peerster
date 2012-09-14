@@ -31,6 +31,7 @@ ChatDialog::ChatDialog()
     addAddrPort = new QLineEdit();
     addrPortListView = new QListView();
     addrPortListView->setModel(new QStringListModel(addrPortStrList));
+    addrPortListView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     
     // Register a callback on the textedit's returnPressed signal
 	// so that we can send the message entered by the user.
