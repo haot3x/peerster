@@ -1,4 +1,3 @@
-
 #include <unistd.h>
 
 #include <QVBoxLayout>
@@ -55,6 +54,7 @@ ChatDialog::ChatDialog()
 
 
     // add local four ports
+    /* deprecated for testing
     for (quint16 q = sockRecv->getMyPortMin(); q <= sockRecv->getMyPortMax(); q++)
     {
         Peer peer(QHostInfo::localHostName(), QHostAddress("127.0.0.1"), q);
@@ -62,6 +62,7 @@ ChatDialog::ChatDialog()
         addrPortStrList.append(QHostAddress("127.0.0.1").toString() + ":" + QString::number(q));
         ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
     }
+    */
 
     // Small text-entry box the user can enter messages.
 	// This widget normally expands only horizontally,
@@ -493,7 +494,7 @@ void ChatDialog::gotRecvMessage()
                     updateStatusMap->insert(recvOrigin, QString::number(recvSeqNo));
 
                     // display
-                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
+                    textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
                     
                     // Random pick up a peer from peer list
                     Peer destPeer = peerList->at(qrand()%(peerList->size()));
@@ -526,7 +527,7 @@ void ChatDialog::gotRecvMessage()
                     recvMessageMap->insert(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo), recvMessage);
                     updateStatusMap->insert(recvOrigin, QString::number(recvSeqNo));
 
-                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
+                    textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
                 
                     // Random pick up a peer from peerlist
                     Peer destPeer = peerList->at(qrand()%(peerList->size()));
@@ -612,15 +613,8 @@ bool NetSocket::bind()
 
 int main(int argc, char **argv)
 {
-    // Read command line arguments
-    // QCoreApplication app(argc, argv);
-    // QStringList args = QCoreApplication::arguments();
-
-    
 	// Initialize Qt toolkit
 	QApplication app(argc,argv);
-
-    // qDebug() << argc;
 
 	// Create an initial chat dialog window
 	ChatDialog dialog;
