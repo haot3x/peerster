@@ -4,7 +4,7 @@
 #include <QDialog>
 #include <QTextEdit>
 #include <QUdpSocket>
-#include <QPushButton>// Tian added for click to send message
+#include <QPushButton>
 #include <QKeySequence>// Tian added for shortcuts
 #include <QShortcut>// Tian added for shortcuts
 #include <QString>
@@ -25,6 +25,7 @@
 #include <QStringListModel>
 #include <QList>
 #include <QCoreApplication>
+#include <QVBoxLayout>
 
 class NetSocket : public QUdpSocket
 {
@@ -52,13 +53,25 @@ public:
     quint16 port;
 };
 
-
-class ChatDialog : public QDialog
+class TabDialog : public QDialog
 {
-	Q_OBJECT
+    Q_OBJECT;
 
 public:
-	ChatDialog();
+    TabDialog(QWidget* parent = 0);
+
+private:
+    QTabWidget *tabWidget;
+};
+
+
+class GossipMessaging : public QWidget 
+{
+	Q_OBJECT;
+
+public:
+	GossipMessaging(QWidget* parent = 0);
+    ~GossipMessaging();
 
 public slots:
 	void gotReturnPressed();
@@ -87,5 +100,58 @@ private:
     QStringList addrPortStrList;
     QList<Peer> *peerList;
 };
+
+class GossipMessagingEntry : public QWidget
+{
+    Q_OBJECT;
+
+public:
+    GossipMessagingEntry(QWidget* parent = 0);
+
+private:
+    QPushButton* switchButton;
+    GossipMessaging* gm;
+    QVBoxLayout* layout;
+    
+public slots:
+    void switchButtonClicked();
+};
+
+
+class PointToPointMessaging : public QWidget 
+{
+	Q_OBJECT;
+
+public:
+	PointToPointMessaging(QWidget* parent = 0);
+/*
+public slots:
+	void gotReturnPressed();
+    void gotRecvMessage();
+    void fwdMessage(QString fwdInfo);
+    void antiEntropy();
+    void addrPortAdded();
+    void lookedUp(const QHostInfo& host);
+    void lookedUpBeforeInvoke(const QHostInfo& host);
+    */
+
+private:
+	QTextEdit *textview;
+	QTextEdit *textedit;
+    QLineEdit *addAddrPort;
+    QListView *addrPortListView;
+    NetSocket *sockRecv;
+    int randomOriginID;
+    QVariantMap *recvMessageMap;
+    QVariantMap *updateStatusMap;
+    quint32 SeqNo;
+    QString *myOrigin;
+    QTimer *timerForAck;
+    QTimer *timerForAntiEntropy;
+    QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
+    QStringList addrPortStrList;
+    QList<Peer> *peerList;
+};
+
 
 #endif // PEERSTER_MAIN_HH

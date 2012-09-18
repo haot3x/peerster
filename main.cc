@@ -1,39 +1,97 @@
 #include <unistd.h>
 
-#include <QVBoxLayout>
 #include <QApplication>
 #include <QDebug>
 
 #include "main.hh"
 
-ChatDialog::ChatDialog()
+TabDialog::TabDialog(QWidget* parent)
+    : QDialog(parent)
 {
-    // Tian: Generate partial origin with rand num
+    tabWidget = new QTabWidget;
+    tabWidget->addTab(new PointToPointMessaging(), tr("Point2Point Messaging"));
+    tabWidget->addTab(new GossipMessagingEntry(), tr("Gossip Messaging"));
+
+    QVBoxLayout *mainLayout = new QVBoxLayout;
+    mainLayout->addWidget(tabWidget);
+    setLayout(mainLayout);
+    
+    setWindowTitle(tr("Peerster"));
+    this->resize(500, 300);
+} 
+
+
+
+PointToPointMessaging::PointToPointMessaging(QWidget* parent)
+    : QWidget(parent)
+{
+
+}
+
+GossipMessagingEntry::GossipMessagingEntry(QWidget* parent)
+    : QWidget(parent)
+{
+    switchButton = new QPushButton("Switch On", this);
+
+    layout = new QVBoxLayout();
+    layout->addWidget(switchButton);
+    setLayout(layout);
+
+    connect(switchButton, SIGNAL(clicked()),
+        this, SLOT(switchButtonClicked()));
+}
+    
+void GossipMessagingEntry::switchButtonClicked()
+{
+    if (switchButton->text() == "Switch On")
+    {
+        gm = new GossipMessaging();
+        layout->addWidget(gm);
+        setLayout(layout);
+        switchButton->setText("Switch Off");
+    }
+    else 
+    {
+        delete gm;
+        switchButton->setText("Switch On");
+    }
+
+}
+
+
+
+GossipMessaging::GossipMessaging(QWidget* parent)
+    : QWidget(parent)
+{
+    // generate rand seed
     qsrand(time(0));
+    // generate my Origin
     randomOriginID = qrand();
     myOrigin = new QString(QHostInfo::localHostName() + QString::number(randomOriginID));
-    // Tian: Initialize SeqNo;
+    // Initialize SeqNo. Wait for the first message to send
     SeqNo = 1;
-    // Tian: Initialize recvMessageMap;
+    // Initialize recvMessageMap <Origin+"[Ori||Seq]"+SeqNo, Messsage>
+    // Used to store all the coming messages 
     recvMessageMap = new QVariantMap(); 
     updateStatusMap = new QVariantMap(); 
+    // Used to record the ack to stop resending
     ackHist = new QVector<QString>();
+    // Used to record peer information
     peerList = new QList<Peer>();
 
 	setWindowTitle("Peerster");
 
 	// Read-only text box where we display messages from everyone.
-	// This widget expands both horizontally and vertically.
 	textview = new QTextEdit(this);
 	textview->setReadOnly(true);
 
+    // Input peer information
     addAddrPort = new QLineEdit();
+    // List view to display peers 
     addrPortListView = new QListView();
     addrPortListView->setModel(new QStringListModel(addrPortStrList));
     addrPortListView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     
-    // Register a callback on the textedit's returnPressed signal
-	// so that we can send the message entered by the user.
     //NetSocket sock;
     sockRecv = new NetSocket();
 	if (!sockRecv->bind())
@@ -52,38 +110,28 @@ ChatDialog::ChatDialog()
             this, SLOT(lookedUpBeforeInvoke(QHostInfo)));
     }
 
-
-    // add local four ports
-    /* deprecated for testing
+    // add three local ports
     for (quint16 q = sockRecv->getMyPortMin(); q <= sockRecv->getMyPortMax(); q++)
     {
-        Peer peer(QHostInfo::localHostName(), QHostAddress("127.0.0.1"), q);
-        peerList->append(peer);
-        addrPortStrList.append(QHostAddress("127.0.0.1").toString() + ":" + QString::number(q));
-        ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+        if (q != sockRecv->getMyPort())
+        {
+            Peer peer(QHostInfo::localHostName(), QHostAddress("127.0.0.1"), q);
+            peerList->append(peer);
+            addrPortStrList.append(QHostAddress("127.0.0.1").toString() + ":" + QString::number(q));
+            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+        }
     }
-    */
 
-    // Small text-entry box the user can enter messages.
-	// This widget normally expands only horizontally,
-	// leaving extra vertical space for the textview widget.
-	//
-	// You might change this into a read/write QTextEdit,
-	// so that the user can easily enter multi-line messages.
-    // Exercise 2. Tian modified the class
+    // Input chat message from text edit
 	textedit= new QTextEdit(this);
     textedit->installEventFilter(this);
     
 	// Lay out the widgets to appear in the main window.
-	// For Qt widget and layout concepts see:
-	// http://doc.qt.nokia.com/4.7-snapshot/widgets-and-layouts.html
 	QGridLayout *layout = new QGridLayout();
 	layout->addWidget(textview, 0, 0, 13, 1);
 	layout->addWidget(textedit, 14, 0, 1, 1);
     layout->addWidget(addrPortListView, 2, 18, -1, 1);
     layout->addWidget(addAddrPort, 0, 18, 1, 1); 
-    // Exercise 1. Tian added it to set focus on the textedit without having to click in it first.
-    this->resize(500, 300);
     textedit->setFocus();
 
 	setLayout(layout);
@@ -101,7 +149,21 @@ ChatDialog::ChatDialog()
 
 }
 
-void ChatDialog::lookedUp(const QHostInfo& host)
+GossipMessaging::~GossipMessaging()
+{
+    delete textview;
+	delete textedit;
+    delete addAddrPort;
+    delete addrPortListView;
+    delete recvMessageMap;
+    delete updateStatusMap;
+    delete myOrigin;
+    delete peerList;
+
+    delete sockRecv;
+}
+
+void GossipMessaging::lookedUp(const QHostInfo& host)
 {
     // Check whether there are hosts
     if (host.error() != QHostInfo::NoError)
@@ -133,7 +195,7 @@ void ChatDialog::lookedUp(const QHostInfo& host)
     }
 }
 
-void ChatDialog::lookedUpBeforeInvoke(const QHostInfo& host)
+void GossipMessaging::lookedUpBeforeInvoke(const QHostInfo& host)
 {
     static int times = 1;
     // Check whether there are hosts
@@ -166,7 +228,7 @@ void ChatDialog::lookedUpBeforeInvoke(const QHostInfo& host)
 }
     
 
-void ChatDialog::addrPortAdded()
+void GossipMessaging::addrPortAdded()
 {
     QString inputAddrPort = addAddrPort->text();
     QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
@@ -176,7 +238,7 @@ void ChatDialog::addrPortAdded()
         this, SLOT(lookedUp(QHostInfo)));
 } 
 
-void ChatDialog::antiEntropy()
+void GossipMessaging::antiEntropy()
 {
     if (updateStatusMap->contains(*myOrigin))
     {
@@ -194,7 +256,7 @@ void ChatDialog::antiEntropy()
 }
 
 
-void ChatDialog::gotReturnPressed()
+void GossipMessaging::gotReturnPressed()
 {
 
     // Initially, just echo the string locally.
@@ -228,7 +290,7 @@ void ChatDialog::gotReturnPressed()
     SeqNo++;
 }
 
-void ChatDialog::fwdMessage(QString fwdInfo)
+void GossipMessaging::fwdMessage(QString fwdInfo)
 {
     // qDebug() << fwdInfo;
     // Parse fwdInfo
@@ -330,7 +392,7 @@ void ChatDialog::fwdMessage(QString fwdInfo)
 }
 
 
-void ChatDialog::gotRecvMessage()
+void GossipMessaging::gotRecvMessage()
 {
     //while (sockRecv->hasPendingDatagrams())
     {
@@ -563,7 +625,7 @@ void ChatDialog::gotRecvMessage()
 
 
 // Tian. catch the returnPressed event to send the message
-bool ChatDialog::eventFilter(QObject *obj, QEvent *event)
+bool GossipMessaging::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj == textedit && event->type() == QEvent::KeyPress)
     {
@@ -617,10 +679,11 @@ int main(int argc, char **argv)
 	QApplication app(argc,argv);
 
 	// Create an initial chat dialog window
-	ChatDialog dialog;
-	dialog.show();
+	// GossipMessaging dialog;
+	// dialog.show();
+    TabDialog dialog;
 
 	// Enter the Qt main loop; everything else is event driven
-	return app.exec();
+	return dialog.exec();
 }
 
