@@ -32,6 +32,7 @@ GossipMessagingEntry::GossipMessagingEntry(QWidget* parent)
     : QWidget(parent)
 {
     switchButton = new QPushButton("Switch On", this);
+    switchButton->setAutoDefault(false);
 
     layout = new QVBoxLayout();
     layout->addWidget(switchButton);
@@ -45,15 +46,15 @@ void GossipMessagingEntry::switchButtonClicked()
 {
     if (switchButton->text() == "Switch On")
     {
+        switchButton->setText("Switch Off");
         gm = new GossipMessaging();
         layout->addWidget(gm);
         setLayout(layout);
-        switchButton->setText("Switch Off");
     }
     else 
     {
-        delete gm;
         switchButton->setText("Switch On");
+        delete gm;
     }
 
 }
@@ -623,7 +624,6 @@ void GossipMessaging::gotRecvMessage()
     // qDebug() << "recv over!\n";
 }
 
-
 // Tian. catch the returnPressed event to send the message
 bool GossipMessaging::eventFilter(QObject *obj, QEvent *event)
 {
@@ -640,6 +640,7 @@ bool GossipMessaging::eventFilter(QObject *obj, QEvent *event)
         } else
         return false;
     }
+
     return false;
 }
 
