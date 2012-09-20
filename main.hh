@@ -26,6 +26,15 @@
 #include <QList>
 #include <QCoreApplication>
 #include <QVBoxLayout>
+#include <QLabel>
+
+class NetSocket;
+class Peer;
+class TabDialog;
+class GossipMessaging;
+class GossipMessagingEntry;
+class PointToPointMessaging;
+class PrivateMessage;
 
 class NetSocket : public QUdpSocket
 {
@@ -117,26 +126,29 @@ public slots:
     void switchButtonClicked();
 };
 
-
 class PointToPointMessaging : public QWidget 
 {
 	Q_OBJECT;
-
+    friend class PrivateMessage;
 public:
 	PointToPointMessaging(QWidget* parent = 0);
-/*
+	~PointToPointMessaging();
+
 public slots:
 	void gotReturnPressed();
     void gotRecvMessage();
     void fwdMessage(QString fwdInfo);
     void antiEntropy();
+    void broadcastRM();
     void addrPortAdded();
     void lookedUp(const QHostInfo& host);
     void lookedUpBeforeInvoke(const QHostInfo& host);
-    */
+    void openPrivateMessageWin(const QModelIndex&);
 
 private:
-	QTextEdit *textview;
+    bool eventFilter(QObject *obj, QEvent *ev);
+	PrivateMessage *pm;
+    QTextEdit *textview;
 	QTextEdit *textedit;
     QLineEdit *addAddrPort;
     QListView *addrPortListView;
@@ -147,10 +159,35 @@ private:
     quint32 SeqNo;
     QString *myOrigin;
     QTimer *timerForAck;
+    QTimer *timerForRM;
     QTimer *timerForAntiEntropy;
     QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
     QStringList addrPortStrList;
     QList<Peer> *peerList;
+
+    QListView *originListView;
+    QStringList originStrList;
+
+    QHash<QString, QPair<QHostAddress, quint16> > *nextHopTable;
+};
+
+class PrivateMessage: public QDialog
+{
+    Q_OBJECT;
+    friend class PointToPointMessaging;
+
+public:
+    PrivateMessage(const QModelIndex& index, PointToPointMessaging* p2p);
+
+public slots:
+	void gotReturnPressed();
+
+private:
+    QString dest;
+	QTextEdit *textview;
+	QTextEdit *textedit;
+    bool eventFilter(QObject *obj, QEvent *ev);
+    PointToPointMessaging* upperP2P;
 };
 
 
