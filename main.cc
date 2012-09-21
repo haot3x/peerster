@@ -680,10 +680,12 @@ PointToPointMessaging::PointToPointMessaging(QWidget* parent)
     myOrigin = new QString(QHostInfo::localHostName() + QString::number(randomOriginID));
     // Initialize SeqNo. Wait for the first message to send
     SeqNo = 1;
+    routMessSeqNo = 1;
     // Initialize recvMessageMap <Origin+"[Ori||Seq]"+SeqNo, Messsage>
     // Used to store all the coming messages 
     recvMessageMap = new QVariantMap(); 
     updateStatusMap = new QVariantMap(); 
+    updateRoutOriSeqMap = new QVariantMap();
     // Used to record the ack to stop resending
     ackHist = new QVector<QString>();
     // Used to record peer information
@@ -717,15 +719,26 @@ PointToPointMessaging::PointToPointMessaging(QWidget* parent)
     connect(sockRecv, SIGNAL(readyRead()),
         this, SLOT(gotRecvMessage()));
     
+    // Process the arguments
     // If there are CLI arguments to set hostname:port or ipaddr:port, add them
+    // If there is -noforward, set isNoForward up
+    isNoForward = false;
     for (int i = 1; i < qApp->argc(); i++)
     {
-        qDebug() << qApp->argv()[i];
-        QString inputAddrPort = qApp->argv()[i];
-        QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+        if ("-noforward" == tr(qApp->argv()[i])) 
+        {
+            qDebug() << "-noforward mode launched!";
+            isNoForward = true;
+            qDebug() << isNoForward;
+        }
+        else
+        {
+            QString inputAddrPort = qApp->argv()[i];
+            QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
     
-        QHostInfo::lookupHost(addr, 
-            this, SLOT(lookedUpBeforeInvoke(QHostInfo)));
+            QHostInfo::lookupHost(addr, 
+                this, SLOT(lookedUpBeforeInvoke(QHostInfo)));
+        }
     }
 
     // add one local ports
@@ -748,7 +761,7 @@ PointToPointMessaging::PointToPointMessaging(QWidget* parent)
     textedit->installEventFilter(this);
 
     // Set labels
-    QLabel *destListLabel = new QLabel("All destinations (Double-Click to talk)", this);
+    QLabel *destListLabel = new QLabel("All dest(DoubleClick)", this);
     // destListLabel.setText("All destinations (DoubleClick to talk)");
     QLabel *neighborListLabel = new QLabel("    Direct neighbors", this);
     //neighborListLabel.setText("Direct neighbors");
@@ -781,7 +794,7 @@ PointToPointMessaging::PointToPointMessaging(QWidget* parent)
     timerForRM = new QTimer(this);
     connect(timerForRM , SIGNAL(timeout()), 
         this, SLOT(broadcastRM()));
-    timerForRM->start(60000);
+    timerForRM->start(30000);
 
     // Add hostname:port or ipaddr:port 
     connect(addAddrPort, SIGNAL(returnPressed()),
@@ -889,18 +902,20 @@ void PointToPointMessaging::addrPortAdded()
         this, SLOT(lookedUp(QHostInfo)));
 } 
 
-// broadcast routing messages to all direct neighbor peers
+// Broadcast routing messages to all peer neighbors
 void PointToPointMessaging::broadcastRM()
 {
     for (int i = 0; i < peerList->size(); i++)
     {
-        QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(1)
+        QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(routMessSeqNo)
             + "[-ADDRIS>]" + peerList->at(i).ipaddr.toString()
             + "[-PORTIS>]" + QString::number(peerList->at(i).port)
             + "[-METYPE>]" + "RM";
         fwdMessage(fwdInfo);
     }
+    routMessSeqNo ++;
 }
+
 void PointToPointMessaging::antiEntropy()
 {
     if (updateStatusMap->contains(*myOrigin))
@@ -971,7 +986,7 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
     //qDebug() << "SeqNoSM: " << SeqNoSM;
         
     QVariantMap *message;
-    if (mType == "GM")
+    if (mType == "GM" && isNoForward == false)
     {
         message = new QVariantMap(recvMessageMap->value(OriSeq).toMap());
         
@@ -1001,7 +1016,7 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
         else
             ackHist->remove(ackHist->indexOf(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1)));
     }
-    else if (mType == "SM")
+    else if (mType == "SM" && isNoForward == false)
     {
         QVariantMap wantValue;
         wantValue.insert(OriginSM, SeqNoSM);
@@ -1043,7 +1058,7 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
 void PointToPointMessaging::gotRecvMessage()
 {
     //while (sockRecv->hasPendingDatagrams())
-    {
+    //{
         // read datagram into an instance of QByteArray
         QByteArray *bytearrayRecv = new QByteArray();
         bytearrayRecv->resize(sockRecv->pendingDatagramSize());
@@ -1145,7 +1160,7 @@ void PointToPointMessaging::gotRecvMessage()
                 fwdMessage(fwdInfo2);
             }
         }
-        else if (recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) // It is a Gossip Message (GM) or Routing Message (RM)
+        else if (recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) // It is a Gossip Message (GM) 
         {
             qDebug() << "received new GM from " << senderPort;
             QString recvOrigin = recvMessage.value("Origin").toString();
@@ -1161,51 +1176,28 @@ void PointToPointMessaging::gotRecvMessage()
             if (updateStatusMap->contains(recvOrigin))
             {
                 quint32 mySeqNo = updateStatusMap->value(recvOrigin).toInt();
-                if (mySeqNo + 1 == recvSeqNo)
+                if ( mySeqNo + 1 == recvSeqNo)
                 {
                     // It is an exact new message for me
                     // update message 
                     recvMessageMap->insert(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo), recvMessage);
                     updateStatusMap->insert(recvOrigin, QString::number(recvSeqNo));
-                    // Lab2: update nextHopTable
-                    if (recvOrigin != *myOrigin)
-                    {
-                        nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
-                        qDebug() << "+++++++++++++" << nextHopTable->value(recvOrigin);
-                        broadcastRM();
-                        // Add it to the dest (DIRECT and INDIRECT) list view if not exist
-                        if (!originStrList.contains(recvOrigin))
-                        {
-                            originStrList.append(recvOrigin);
-                            ((QStringListModel*) originListView->model())->setStringList(originStrList);
-                        }
-                    } 
- 
-                    // Random pick up a peer from peer list
-                    // broadcast
+
+                    textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
+                    
+                    // broadcast message
                     for (int i = 0; i < peerList->size(); i++)
                     {
                         Peer destPeer = peerList->at(i);
-
-                        // if it is a gossip message then display
-                        QString mType;
-                        if (recvMessage.contains("ChatText"))
-                        {
-                            textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
-                            mType = "GM";
-                        }
-                        else
-                            mType = "RM";
-                        
                         // forward
                         QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
                                 + "[-ADDRIS>]" + destPeer.ipaddr.toString() 
                                 + "[-PORTIS>]" + QString::number(destPeer.port)
-                                + "[-METYPE>]" + mType;
+                                + "[-METYPE>]" + "GM";
                         fwdMessage(fwdInfo);
                     }
                 }
-                else 
+                else
                 {
                     // I have not received previous messages
                     // send my status message
@@ -1215,50 +1207,28 @@ void PointToPointMessaging::gotRecvMessage()
                             + "[-METYPE>]" + "SM"; 
                     fwdMessage(fwdInfo);
                 }
-                
             }
             else // not contain origin
             {
-                if ( 1 == recvSeqNo )
+                if ( 1 == recvSeqNo) 
                 {
                     // It is an exact new message for me
                     // receive and update the message
                     recvMessageMap->insert(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo), recvMessage);
                     updateStatusMap->insert(recvOrigin, QString::number(recvSeqNo));
-                    // Lab2: update nextHopTable
-                    if (recvOrigin != *myOrigin)
-                    {
-                        nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
-                        qDebug() << "+++++++++++++" << nextHopTable->value(recvOrigin);
-                        broadcastRM();
-                        // Add it to the list view if not exist
-                        if (!originStrList.contains(recvOrigin))
-                        {
-                            originStrList.append(recvOrigin);
-                            ((QStringListModel*) originListView->model())->setStringList(originStrList);
-                        }
-                    }
-                
-                    // Random pick up a peer from peerlist
-                    // broadcast
+
+                    // if it is a gossip message then display
+                    textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
+                    
+                    // broadcast message
                     for (int i = 0; i < peerList->size(); i++)
                     {
-                        Peer destPeer = peerList->at(qrand()%(peerList->size()));
-
-                        QString mType;
-                        if (recvMessage.contains("ChatText"))
-                        {
-                            mType = "GM";
-                            textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
-                        }
-                        else 
-                            mType = "RM";
-
+                        Peer destPeer = peerList->at(i);
                         // forward
                         QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
-                                + "[-ADDRIS>]" + destPeer.ipaddr.toString()
+                                + "[-ADDRIS>]" + destPeer.ipaddr.toString() 
                                 + "[-PORTIS>]" + QString::number(destPeer.port)
-                                + "[-METYPE>]" + mType;
+                                + "[-METYPE>]" + "GM";
                         fwdMessage(fwdInfo);
                     }
                 }
@@ -1274,13 +1244,59 @@ void PointToPointMessaging::gotRecvMessage()
                 }
             }
         }
-        else if (recvMessage.contains("Dest") && recvMessage.contains("ChatText") && recvMessage.contains("HopLimit")) 
-            // It is a private message
+        else if (!recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) // It is a Routing Message (RM)
+        {
+            qDebug() << "received RM from " << senderPort;
+            QString recvOrigin = recvMessage.value("Origin").toString();
+            quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
+
+            if (recvOrigin != *myOrigin)
+            {
+                    quint32 myRoutSeqNo = updateRoutOriSeqMap->value(recvOrigin).toInt();
+                    if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo)
+                    {}
+                    else 
+                    {
+                        updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
+                        nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
+                        qDebug() << "+++++++++++++" << nextHopTable->value(recvOrigin);
+
+                        //  Exchange my routing message 
+                        /*
+                        QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(1)
+                            + "[-ADDRIS>]" + senderAddr.toString()
+                            + "[-PORTIS>]" + QString::number(senderPort)
+                            + "[-METYPE>]" + "RM";
+                        fwdMessage(fwdInfo);
+                        */
+         
+                        // Add it to the list view if not exist
+                        if (!originStrList.contains(recvOrigin))
+                        {
+                            originStrList.append(recvOrigin);
+                            ((QStringListModel*) originListView->model())->setStringList(originStrList);
+                        }
+                        // broadcast message
+                        for (int i = 0; i < peerList->size(); i++)
+                        {
+                            Peer destPeer = peerList->at(i);
+                            // forward
+                            QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
+                                    + "[-ADDRIS>]" + destPeer.ipaddr.toString() 
+                                    + "[-PORTIS>]" + QString::number(destPeer.port)
+                                    + "[-METYPE>]" + "RM";
+                            fwdMessage(fwdInfo);
+                        }
+                    }
+            }
+        }
+        else if (recvMessage.contains("Dest") && recvMessage.contains("ChatText") && recvMessage.contains("HopLimit") ) 
+            // It is a private message 
         {
             QString dest = recvMessage.value("Dest").toString();
             if (dest  == *myOrigin) // If it is sent to me
                 textview->append("Private Message > " + recvMessage.value("ChatText").toString());
-            else if (recvMessage.value("HopLimit").toInt() > 0)
+            else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) // If -noforward is not launched
             {
                 recvMessage.insert("HopLimit", (quint32)(recvMessage.value("HopLimit").toInt()-1));
 
@@ -1320,9 +1336,8 @@ void PointToPointMessaging::gotRecvMessage()
             qDebug() << "not normal messages";
             exit(-1);
         }
-    }
+    //}
 
-    // qDebug() << "recv over!\n";
 }
 
 // Tian. catch the returnPressed event to send the message

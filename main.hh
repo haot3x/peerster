@@ -146,6 +146,7 @@ public slots:
     void openPrivateMessageWin(const QModelIndex&);
 
 private:
+    bool isNoForward;
     bool eventFilter(QObject *obj, QEvent *ev);
 	PrivateMessage *pm;
     QTextEdit *textview;
@@ -156,7 +157,9 @@ private:
     int randomOriginID;
     QVariantMap *recvMessageMap;
     QVariantMap *updateStatusMap;
+    QVariantMap *updateRoutOriSeqMap;
     quint32 SeqNo;
+    quint32 routMessSeqNo;
     QString *myOrigin;
     QTimer *timerForAck;
     QTimer *timerForRM;
