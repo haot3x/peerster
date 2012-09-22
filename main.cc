@@ -1090,6 +1090,7 @@ void PointToPointMessaging::gotRecvMessage()
         if (int64Status == -1) exit(1); 
 
         // Whether should it be added to peer list as a new peer?
+
         bool containsPeer = false;
         for (int i = 0; i < peerList->size(); i++)
         {
@@ -1106,6 +1107,10 @@ void PointToPointMessaging::gotRecvMessage()
             addrPortStrList.append(senderAddr.toString() + ":" + QString::number(senderPort));
             ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
         }
+
+        // record the last ip and port info
+        *lastIP = senderAddr;
+        lastPort = senderPort;
 
         // de-serialize
         QVariantMap recvMessage;
@@ -1198,8 +1203,8 @@ void PointToPointMessaging::gotRecvMessage()
             // LOOKUP
             if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
             {
-                QString recvLastIP = recvMessage.value("lastIP").toString();
-                QString recvLastPort = recvMessage.value("lastPort").toString();
+                QString recvLastIP = recvMessage.value("LastIP").toString();
+                QString recvLastPort = recvMessage.value("LastPort").toString();
                 QString ipaddr_port = recvLastIP + ":" + recvLastPort;
 
                 if (!addrPortStrList.contains(ipaddr_port))
@@ -1293,8 +1298,8 @@ void PointToPointMessaging::gotRecvMessage()
                     // LOOKUP
                     if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
                     {
-                        QString recvLastIP = recvMessage.value("lastIP").toString();
-                        QString recvLastPort = recvMessage.value("lastPort").toString();
+                        QString recvLastIP = recvMessage.value("LastIP").toString();
+                        QString recvLastPort = recvMessage.value("LastPort").toString();
                         QString ipaddr_port = recvLastIP + ":" + recvLastPort;
 
                         if (!addrPortStrList.contains(ipaddr_port))
@@ -1333,9 +1338,6 @@ void PointToPointMessaging::gotRecvMessage()
                         for (int i = 0; i < peerList->size(); i++)
                         {
                             Peer destPeer = peerList->at(i);
-                            // forward
-                            *lastIP = senderAddr;
-                            lastPort = senderPort;
                             QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
                                     + "[-ADDRIS>]" + destPeer.ipaddr.toString() 
                                     + "[-PORTIS>]" + QString::number(destPeer.port)
