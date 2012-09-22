@@ -172,6 +172,9 @@ private:
     QStringList originStrList;
 
     QHash<QString, QPair<QHostAddress, quint16> > *nextHopTable;
+
+    QHostAddress* lastIP;
+    quint16 lastPort;
 };
 
 class PrivateMessage: public QDialog

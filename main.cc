@@ -693,6 +693,10 @@ PointToPointMessaging::PointToPointMessaging(QWidget* parent)
 
 	setWindowTitle("Peerster: " + *myOrigin);
 
+    // set the last recv pairs
+    lastIP = new QHostAddress();
+    lastPort = 0;
+
 	// Read-only text box where we display messages from everyone.
 	textview = new QTextEdit(this);
 	textview->setReadOnly(true);
@@ -989,6 +993,15 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
     if (mType == "GM" && isNoForward == false)
     {
         message = new QVariantMap(recvMessageMap->value(OriSeq).toMap());
+
+        // if it is a forwarding message, add lastIP, lastPort
+        if (message->value("Origin").toString() != *myOrigin)
+        {
+            message->insert(tr("LastIP"), lastIP->toString());
+            message->insert(tr("LastPort"), lastPort);
+
+            qDebug() << "GGGGGGGGGGGGGGGGGG" << *message;
+        }
         
         // Serialize 
         QByteArray *bytearrayToSend = new QByteArray();
@@ -1040,7 +1053,15 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
         message = new QVariantMap();
         message->insert("Origin", OriginSM);
         message->insert("SeqNo", SeqNoSM);
-        
+
+        // if it is a forwarding message, add lastIP, lastPort
+        if (message->value("Origin").toString() != *myOrigin)
+        {
+            message->insert(tr("LastIP"), lastIP->toString());
+            message->insert(tr("LastPort"), lastPort);
+            qDebug() << "RRRRRRRRRRRRRRRR" << *message;
+        }
+    
         // Serialize 
         QByteArray *bytearrayToSend = new QByteArray();
         QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
@@ -1173,6 +1194,21 @@ void PointToPointMessaging::gotRecvMessage()
                             + "[-METYPE>]" + "SM"; 
             fwdMessage(fwdInfo);
 
+            // If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
+            // LOOKUP
+            if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
+            {
+                QString recvLastIP = recvMessage.value("lastIP").toString();
+                QString recvLastPort = recvMessage.value("lastPort").toString();
+                QString ipaddr_port = recvLastIP + ":" + recvLastPort;
+
+                if (!addrPortStrList.contains(ipaddr_port))
+                {
+                    addAddrPort->setText(ipaddr_port);
+                    addrPortAdded();
+                }
+            }
+
             if (updateStatusMap->contains(recvOrigin))
             {
                 quint32 mySeqNo = updateStatusMap->value(recvOrigin).toInt();
@@ -1250,8 +1286,25 @@ void PointToPointMessaging::gotRecvMessage()
             QString recvOrigin = recvMessage.value("Origin").toString();
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
 
+
             if (recvOrigin != *myOrigin)
             {
+                    // If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
+                    // LOOKUP
+                    if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
+                    {
+                        QString recvLastIP = recvMessage.value("lastIP").toString();
+                        QString recvLastPort = recvMessage.value("lastPort").toString();
+                        QString ipaddr_port = recvLastIP + ":" + recvLastPort;
+
+                        if (!addrPortStrList.contains(ipaddr_port))
+                        {
+                            addAddrPort->setText(ipaddr_port);
+                            addrPortAdded();
+                        }
+                    }
+
+
                     quint32 myRoutSeqNo = updateRoutOriSeqMap->value(recvOrigin).toInt();
                     if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo)
                     {}
@@ -1281,6 +1334,8 @@ void PointToPointMessaging::gotRecvMessage()
                         {
                             Peer destPeer = peerList->at(i);
                             // forward
+                            *lastIP = senderAddr;
+                            lastPort = senderPort;
                             QString fwdInfo = recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo)
                                     + "[-ADDRIS>]" + destPeer.ipaddr.toString() 
                                     + "[-PORTIS>]" + QString::number(destPeer.port)
@@ -1290,8 +1345,7 @@ void PointToPointMessaging::gotRecvMessage()
                     }
             }
         }
-        else if (recvMessage.contains("Dest") && recvMessage.contains("ChatText") && recvMessage.contains("HopLimit") ) 
-            // It is a private message 
+        else if (recvMessage.contains("Dest") && recvMessage.contains("ChatText") && recvMessage.contains("HopLimit") )  // It is a private message 
         {
             QString dest = recvMessage.value("Dest").toString();
             if (dest  == *myOrigin) // If it is sent to me
