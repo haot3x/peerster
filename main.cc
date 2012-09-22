@@ -1311,9 +1311,9 @@ void PointToPointMessaging::gotRecvMessage()
 
 
                     quint32 myRoutSeqNo = updateRoutOriSeqMap->value(recvOrigin).toInt();
-                    if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo)
+                    if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo) // It is the routing message I have received
                     {}
-                    else 
+                    else // It is a new routing message I have not heard of
                     {
                         updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
                         nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
