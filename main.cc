@@ -5,11 +5,14 @@
 
 #include "main.hh"
 
-TabDialog::TabDialog(QWidget* parent)
+// Create the main window with tags for different programs
+TabDialog::
+TabDialog(QWidget* parent)
     : QDialog(parent)
 {
     tabWidget = new QTabWidget;
-    tabWidget->addTab(new PointToPointMessaging(), tr("Point2Point Messaging"));
+    tabWidget->addTab(new FileSharing(), tr("File Sharing"));
+    tabWidget->addTab(new PointToPointMessagingEntry(), tr("Point2Point Messaging"));
     tabWidget->addTab(new GossipMessagingEntry(), tr("Gossip Messaging"));
 
     QVBoxLayout *mainLayout = new QVBoxLayout;
@@ -17,11 +20,12 @@ TabDialog::TabDialog(QWidget* parent)
     setLayout(mainLayout);
     
     setWindowTitle(tr("Peerster"));
-    this->resize(500, 300);
+    this->resize(700, 400);
 } 
 
-
-GossipMessagingEntry::GossipMessagingEntry(QWidget* parent)
+// Gossip Messaging Tab Entry
+GossipMessagingEntry::
+GossipMessagingEntry(QWidget* parent)
     : QWidget(parent)
 {
     switchButton = new QPushButton("Switch On", this);
@@ -35,7 +39,9 @@ GossipMessagingEntry::GossipMessagingEntry(QWidget* parent)
         this, SLOT(switchButtonClicked()));
 }
     
-void GossipMessagingEntry::switchButtonClicked()
+// the switch button on Gossip Messaging Tab Entry 
+void GossipMessagingEntry::
+switchButtonClicked()
 {
     if (switchButton->text() == "Switch On")
     {
@@ -52,9 +58,44 @@ void GossipMessagingEntry::switchButtonClicked()
 
 }
 
+// Gossip Messaging Tab Entry
+PointToPointMessagingEntry::
+PointToPointMessagingEntry(QWidget* parent)
+    : QWidget(parent)
+{
+    switchButton = new QPushButton("Switch On", this);
+    switchButton->setAutoDefault(false);
 
+    layout = new QVBoxLayout();
+    layout->addWidget(switchButton);
+    setLayout(layout);
 
-GossipMessaging::GossipMessaging(QWidget* parent)
+    connect(switchButton, SIGNAL(clicked()),
+        this, SLOT(switchButtonClicked()));
+}
+    
+// the switch button on Gossip Messaging Tab Entry 
+void PointToPointMessagingEntry::
+switchButtonClicked()
+{
+    if (switchButton->text() == "Switch On")
+    {
+        switchButton->setText("Switch Off");
+        p2p = new PointToPointMessaging();
+        layout->addWidget(p2p);
+        setLayout(layout);
+    }
+    else 
+    {
+        switchButton->setText("Switch On");
+        delete p2p;
+    }
+
+}
+
+// gossip messaging constructor 
+GossipMessaging::
+GossipMessaging(QWidget* parent)
     : QWidget(parent)
 {
     // generate rand seed
@@ -611,7 +652,6 @@ void GossipMessaging::gotRecvMessage()
         else 
         {
             qDebug() << "not normal messages";
-            exit(-1);
         }
     }
 
@@ -1059,7 +1099,7 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
         {
             message->insert(tr("LastIP"), lastIP->toString());
             message->insert(tr("LastPort"), lastPort);
-            qDebug() << "RRRRRRRRRRRRRRRR" << *message;
+            //qDebug() << "RRRRRRRRRRRRRRRR" << *message;
         }
     
         // Serialize 
@@ -1078,8 +1118,8 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
 
 void PointToPointMessaging::gotRecvMessage()
 {
-    //while (sockRecv->hasPendingDatagrams())
-    //{
+    while (sockRecv->hasPendingDatagrams())
+    {
         // read datagram into an instance of QByteArray
         QByteArray *bytearrayRecv = new QByteArray();
         bytearrayRecv->resize(sockRecv->pendingDatagramSize());
@@ -1351,7 +1391,7 @@ void PointToPointMessaging::gotRecvMessage()
         {
             QString dest = recvMessage.value("Dest").toString();
             if (dest  == *myOrigin) // If it is sent to me
-                textview->append("Private Message > " + recvMessage.value("ChatText").toString());
+                textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
             else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) // If -noforward is not launched
             {
                 recvMessage.insert("HopLimit", (quint32)(recvMessage.value("HopLimit").toInt()-1));
@@ -1390,9 +1430,8 @@ void PointToPointMessaging::gotRecvMessage()
         else 
         {
             qDebug() << "not normal messages";
-            exit(-1);
         }
-    //}
+    }
 
 }
 
@@ -1480,6 +1519,34 @@ void PrivateMessage::gotReturnPressed()
     textedit->clear();
 }
 
+// ---------------------------------------------------------------------
+//
+FileSharing::
+FileSharing(QWidget* parent)
+{
+    shareFileBtn = new QPushButton("Share File...", this);
+	layout = new QGridLayout();
+	layout->addWidget(shareFileBtn, 0, 0, 13, 1);
+    connect(shareFileBtn, SIGNAL(clicked()), this, SLOT(onShareFileBtnClicked()));
+}
+
+// ---------------------------------------------------------------------
+// respond to share button click
+void FileSharing::
+onShareFileBtnClicked()
+{
+    QStringList fileNames = QFileDialog::getOpenFileNames(this, tr("Add files"), QDir::currentPath(), tr("All files (*.*)"));
+    qDebug() << fileNames;
+}
+
+// ---------------------------------------------------------------------
+//
+FileSharing::
+~FileSharing()
+{
+}
+
+// ---------------------------------------------------------------------
 int main(int argc, char **argv)
 {
 	// Initialize Qt toolkit

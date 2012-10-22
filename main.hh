@@ -27,6 +27,10 @@
 #include <QCoreApplication>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QFileDialog>
+#include <QFileSystemModel>
+#include <QTreeView>
+
 
 class NetSocket;
 class Peer;
@@ -36,6 +40,8 @@ class GossipMessagingEntry;
 class PointToPointMessaging;
 class PrivateMessage;
 
+// ----------------------------------------------------------------------
+// upd socket
 class NetSocket : public QUdpSocket
 {
 	Q_OBJECT
@@ -53,6 +59,8 @@ private:
 	int myPort, myPortMin, myPortMax;
 };
 
+// ----------------------------------------------------------------------
+// Peer class for storage
 class Peer 
 {
 public:
@@ -74,6 +82,8 @@ private:
 };
 
 
+// ----------------------------------------------------------------------
+// Gossip Messging Tab Contents
 class GossipMessaging : public QWidget 
 {
 	Q_OBJECT;
@@ -110,6 +120,25 @@ private:
     QList<Peer> *peerList;
 };
 
+// ----------------------------------------------------------------------
+class PointToPointMessagingEntry : public QWidget
+{
+    Q_OBJECT;
+
+public:
+    PointToPointMessagingEntry(QWidget* parent = 0);
+
+private:
+    QPushButton* switchButton;
+    PointToPointMessaging * p2p;
+    QVBoxLayout* layout;
+    
+public slots:
+    void switchButtonClicked();
+};
+
+
+// ----------------------------------------------------------------------
 class GossipMessagingEntry : public QWidget
 {
     Q_OBJECT;
@@ -126,6 +155,60 @@ public slots:
     void switchButtonClicked();
 };
 
+// ----------------------------------------------------------------------
+class FileSharing : public QWidget 
+{
+	Q_OBJECT;
+public:
+	FileSharing(QWidget* parent = 0);
+	~FileSharing();
+
+public slots:
+    void onShareFileBtnClicked();
+    /*
+	void gotReturnPressed();
+    void gotRecvMessage();
+    void fwdMessage(QString fwdInfo);
+    void antiEntropy();
+    void broadcastRM();
+    void addrPortAdded();
+    void lookedUp(const QHostInfo& host);
+    void lookedUpBeforeInvoke(const QHostInfo& host);
+    void openPrivateMessageWin(const QModelIndex&);
+    */
+
+private:
+    QPushButton *shareFileBtn;
+    QGridLayout *layout;
+    QTreeView *tree;
+    /*
+    NetSocket *sockRecv;
+    int randomOriginID;
+    QVariantMap *recvMessageMap;
+    QVariantMap *updateStatusMap;
+    QVariantMap *updateRoutOriSeqMap;
+    quint32 SeqNo;
+    quint32 routMessSeqNo;
+    QString *myOrigin;
+    QTimer *timerForAck;
+    QTimer *timerForRM;
+    QTimer *timerForAntiEntropy;
+    QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
+    QStringList addrPortStrList;
+    QList<Peer> *peerList;
+
+    QListView *originListView;
+    QStringList originStrList;
+
+    QHash<QString, QPair<QHostAddress, quint16> > *nextHopTable;
+
+    QHostAddress* lastIP;
+    quint16 lastPort;
+    */
+};
+
+
+// ----------------------------------------------------------------------
 class PointToPointMessaging : public QWidget 
 {
 	Q_OBJECT;
@@ -177,6 +260,7 @@ private:
     quint16 lastPort;
 };
 
+// ----------------------------------------------------------------------
 class PrivateMessage: public QDialog
 {
     Q_OBJECT;
