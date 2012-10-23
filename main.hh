@@ -5,8 +5,8 @@
 #include <QTextEdit>
 #include <QUdpSocket>
 #include <QPushButton>
-#include <QKeySequence>// Tian added for shortcuts
-#include <QShortcut>// Tian added for shortcuts
+#include <QKeySequence>
+#include <QShortcut>
 #include <QString>
 #include <QDataStream>
 #include <QVariant>
@@ -38,6 +38,8 @@ class TabDialog;
 class GossipMessaging;
 class GossipMessagingEntry;
 class PointToPointMessaging;
+class FileSharing;
+class PointToPointMessagingEntry;
 class PrivateMessage;
 
 // ----------------------------------------------------------------------
@@ -76,9 +78,13 @@ class TabDialog : public QDialog
 
 public:
     TabDialog(QWidget* parent = 0);
+    ~TabDialog();
 
 private:
     QTabWidget *tabWidget;
+    FileSharing *fs;
+    PointToPointMessagingEntry *p2pEntry;
+    GossipMessagingEntry *gmEntry;
 };
 
 

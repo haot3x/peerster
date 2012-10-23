@@ -5,15 +5,19 @@
 
 #include "main.hh"
 
+// ----------------------------------------------------------------------
 // Create the main window with tags for different programs
 TabDialog::
 TabDialog(QWidget* parent)
     : QDialog(parent)
 {
     tabWidget = new QTabWidget;
-    tabWidget->addTab(new FileSharing(), tr("File Sharing"));
-    tabWidget->addTab(new PointToPointMessagingEntry(), tr("Point2Point Messaging"));
-    tabWidget->addTab(new GossipMessagingEntry(), tr("Gossip Messaging"));
+    fs = new FileSharing();
+    p2pEntry = new PointToPointMessagingEntry();
+    gmEntry = new GossipMessagingEntry();
+    tabWidget->addTab(fs, tr("File Sharing"));
+    tabWidget->addTab(p2pEntry, tr("Point2Point Messaging"));
+    tabWidget->addTab(gmEntry, tr("Gossip Messaging"));
 
     QVBoxLayout *mainLayout = new QVBoxLayout;
     mainLayout->addWidget(tabWidget);
@@ -23,6 +27,17 @@ TabDialog(QWidget* parent)
     this->resize(700, 400);
 } 
 
+// ----------------------------------------------------------------------
+// Destructor
+TabDialog::
+~TabDialog()
+{
+    delete fs;
+    delete p2pEntry;
+    delete gmEntry;
+}
+
+// ----------------------------------------------------------------------
 // Gossip Messaging Tab Entry
 GossipMessagingEntry::
 GossipMessagingEntry(QWidget* parent)
@@ -1551,17 +1566,32 @@ void FileSharing::
 splitFile(const QString fileName, const QString outDir, const int blockSize)
 {
     QFile qf(fileName);
-    qf.open(QIODevice::ReadOnly);
+    if (!qf.open(QIODevice::ReadOnly)) {
+        qDebug() << "No such file";
+        return;
+    }
     QDataStream fin(&qf);
     char buffer[blockSize];
     int part = 0;
+    QCA::Hash shaHash("sha256");
     do {
         int readSize = fin.readRawData(buffer, blockSize);
-        QFile qfOut(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part++));
-        qfOut.open(QIODevice::WriteOnly);
-        QDataStream fout(&qfOut);
-        fout.writeRawData(buffer, readSize);
-        qfOut.close();
+        QFile qfOut(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part));
+        if (qfOut.open(QIODevice::WriteOnly)) {
+            QDataStream fout(&qfOut);
+            fout.writeRawData(buffer, readSize);
+            qfOut.close();
+        }
+        // hash
+        QFile qfHash(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part));
+        if (qfHash.open(QIODevice::ReadOnly)) {
+            shaHash.update(&qfHash);
+            QCA::MemoryRegion hashA = shaHash.final();
+            qDebug() << QCA::arrayToHex(hashA.toByteArray());
+            qfHash.close();
+            shaHash.clear();
+        }
+        ++part;
     } while (!fin.atEnd());
     qf.close();
 
@@ -1588,6 +1618,8 @@ splitFile(const QString fileName, const QString outDir, const int blockSize)
 FileSharing::
 ~FileSharing()
 {
+    delete shareFileBtn;
+	delete layout;
 }
 
 // ---------------------------------------------------------------------
