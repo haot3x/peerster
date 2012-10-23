@@ -28,8 +28,8 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QFileDialog>
-#include <QFileSystemModel>
-#include <QTreeView>
+#include <QtCrypto>
+#include <QIODevice>
 
 
 class NetSocket;
@@ -165,6 +165,7 @@ public:
 
 public slots:
     void onShareFileBtnClicked();
+    void splitFile(const QString fin, const QString outDir, const int blockSize);
     /*
 	void gotReturnPressed();
     void gotRecvMessage();
@@ -180,7 +181,7 @@ public slots:
 private:
     QPushButton *shareFileBtn;
     QGridLayout *layout;
-    QTreeView *tree;
+    
     /*
     NetSocket *sockRecv;
     int randomOriginID;

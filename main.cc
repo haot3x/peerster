@@ -1536,7 +1536,51 @@ void FileSharing::
 onShareFileBtnClicked()
 {
     QStringList fileNames = QFileDialog::getOpenFileNames(this, tr("Add files"), QDir::currentPath(), tr("All files (*.*)"));
-    qDebug() << fileNames;
+    // if tmp_blocks does not exist, create the temp directory
+    if (!QDir(QDir::currentPath() + tr("/tmp_blocks/")).exists())
+            QDir().mkdir(QDir::currentPath() + tr("/tmp_blocks/"));
+    // split files in fileNames
+    for (int i = 0; i < fileNames.size(); ++i) {
+        splitFile(fileNames.at(i).toLocal8Bit().constData(), QDir::currentPath()+tr("/tmp_blocks/"), 8*1024);
+    }
+}
+
+// ---------------------------------------------------------------------
+// split the file into blocks stored in outDir
+void FileSharing::
+splitFile(const QString fileName, const QString outDir, const int blockSize)
+{
+    QFile qf(fileName);
+    qf.open(QIODevice::ReadOnly);
+    QDataStream fin(&qf);
+    char buffer[blockSize];
+    int part = 0;
+    do {
+        int readSize = fin.readRawData(buffer, blockSize);
+        QFile qfOut(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part++));
+        qfOut.open(QIODevice::WriteOnly);
+        QDataStream fout(&qfOut);
+        fout.writeRawData(buffer, readSize);
+        qfOut.close();
+    } while (!fin.atEnd());
+    qf.close();
+
+    // debug: unite file for checking
+    /*
+    QFile unitedFile(outDir + QDir(fileName).dirName() + tr("_united"));
+    unitedFile.open(QIODevice::WriteOnly);
+    QDataStream unitedFlow(&unitedFile);
+    part = 0;
+    while(QFile::exists(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part))){
+        QFile qfOut(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part++));
+        qfOut.open(QIODevice::ReadOnly);
+        QDataStream fout(&qfOut);
+        int readSize = fout.readRawData(buffer, blockSize);
+        qfOut.close();
+        unitedFlow.writeRawData(buffer, readSize);
+    }
+    unitedFile.close();
+    */
 }
 
 // ---------------------------------------------------------------------
@@ -1549,6 +1593,8 @@ FileSharing::
 // ---------------------------------------------------------------------
 int main(int argc, char **argv)
 {
+    // support crypto
+    QCA::Initializer qcainit;
 	// Initialize Qt toolkit
 	QApplication app(argc,argv);
 

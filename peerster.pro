@@ -7,6 +7,7 @@ TARGET =
 DEPENDPATH += .
 INCLUDEPATH += .
 QT += network
+CONFIG += crypto
 
 # Input
 HEADERS += main.hh
