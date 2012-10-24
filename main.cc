@@ -882,7 +882,9 @@ PointToPointMessaging::~PointToPointMessaging()
     delete sockRecv;
 }
 
-void PointToPointMessaging::lookedUp(const QHostInfo& host)
+// ---------------------------------------------------------------------
+void PointToPointMessaging::
+lookedUp(const QHostInfo& host)
 {
     // Check whether there are hosts
     if (host.error() != QHostInfo::NoError)
@@ -1055,7 +1057,7 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
             message->insert(tr("LastIP"), lastIP->toString());
             message->insert(tr("LastPort"), lastPort);
 
-            qDebug() << "GGGGGGGGGGGGGGGGGG" << *message;
+            //qDebug() << "GGGGGGGGGGGGGGGGGG" << *message;
         }
         
         // Serialize 
@@ -1131,7 +1133,10 @@ void PointToPointMessaging::fwdMessage(QString fwdInfo)
 }
 
 
-void PointToPointMessaging::gotRecvMessage()
+// ----------------------------------------------------------------------
+// respond to messages received
+void PointToPointMessaging::
+gotRecvMessage()
 {
     while (sockRecv->hasPendingDatagrams())
     {
@@ -1145,7 +1150,6 @@ void PointToPointMessaging::gotRecvMessage()
         if (int64Status == -1) exit(1); 
 
         // Whether should it be added to peer list as a new peer?
-
         bool containsPeer = false;
         for (int i = 0; i < peerList->size(); i++)
         {
@@ -1241,7 +1245,7 @@ void PointToPointMessaging::gotRecvMessage()
                 fwdMessage(fwdInfo2);
             }
         }
-        else if (recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) // It is a Gossip Message (GM) 
+        if (recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) // It is a Gossip Message (GM) 
         {
             qDebug() << "received new GM from " << senderPort;
             QString recvOrigin = recvMessage.value("Origin").toString();
@@ -1259,13 +1263,32 @@ void PointToPointMessaging::gotRecvMessage()
             if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
             {
                 QString recvLastIP = recvMessage.value("LastIP").toString();
-                QString recvLastPort = recvMessage.value("LastPort").toString();
-                QString ipaddr_port = recvLastIP + ":" + recvLastPort;
-
-                if (!addrPortStrList.contains(ipaddr_port))
+                quint16 recvLastPort = recvMessage.value("LastPort").toInt();
+                QString ipaddr_port = recvLastIP + ":" + QString::number(recvLastPort);
+                bool containsPeer = false;
+                for (int i = 0; i < peerList->size(); i++)
                 {
-                    addAddrPort->setText(ipaddr_port);
-                    addrPortAdded();
+                    if (peerList->at(i).ipaddr == QHostAddress(recvLastIP) && peerList->at(i).port == recvLastPort)
+                        containsPeer = true;
+                }
+                /*
+                qDebug() << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+                qDebug() << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+                qDebug() << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+                qDebug() << !addrPortStrList.contains(ipaddr_port);
+                qDebug() << (containsPeer == false) ;
+                qDebug() << (QHostAddress(recvLastIP) != QHostAddress::LocalHost);
+                qDebug() <<  (recvLastPort != sockRecv->getMyPort());
+                */
+                if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort()))
+                {
+                    // update it to the peer list
+                    Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
+                    peerList->append(peer);
+
+                    // update it to the list view
+                    addrPortStrList.append(ipaddr_port);
+                    ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
                 }
             }
 
@@ -1340,7 +1363,7 @@ void PointToPointMessaging::gotRecvMessage()
                 }
             }
         }
-        else if (!recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) // It is a Routing Message (RM)
+        if (!recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) // It is a Routing Message (RM)
         {
             qDebug() << "received RM from " << senderPort;
             QString recvOrigin = recvMessage.value("Origin").toString();
@@ -1354,13 +1377,23 @@ void PointToPointMessaging::gotRecvMessage()
                     if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
                     {
                         QString recvLastIP = recvMessage.value("LastIP").toString();
-                        QString recvLastPort = recvMessage.value("LastPort").toString();
-                        QString ipaddr_port = recvLastIP + ":" + recvLastPort;
-
-                        if (!addrPortStrList.contains(ipaddr_port))
+                        quint16 recvLastPort = recvMessage.value("LastPort").toInt();
+                        QString ipaddr_port = recvLastIP + ":" + QString::number(recvLastPort);
+                        bool containsPeer = false;
+                        for (int i = 0; i < peerList->size(); i++)
                         {
-                            addAddrPort->setText(ipaddr_port);
-                            addrPortAdded();
+                            if (peerList->at(i).ipaddr == QHostAddress(recvLastIP) && peerList->at(i).port == recvLastPort)
+                                containsPeer = true;
+                        }
+                        if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort()))
+                        {
+                            // update it to the peer list
+                            Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
+                            peerList->append(peer);
+
+                            // update it to the list view
+                            addrPortStrList.append(ipaddr_port);
+                            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
                         }
                     }
 
@@ -1372,7 +1405,6 @@ void PointToPointMessaging::gotRecvMessage()
                     {
                         updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
                         nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
-                        qDebug() << "+++++++++++++" << nextHopTable->value(recvOrigin);
 
                         //  Exchange my routing message 
                         /*
@@ -1383,7 +1415,7 @@ void PointToPointMessaging::gotRecvMessage()
                         fwdMessage(fwdInfo);
                         */
          
-                        // Add it to the list view if not exist
+                        // Add it to the All dest list view if not exist
                         if (!originStrList.contains(recvOrigin))
                         {
                             originStrList.append(recvOrigin);
@@ -1402,7 +1434,7 @@ void PointToPointMessaging::gotRecvMessage()
                     }
             }
         }
-        else if (recvMessage.contains("Dest") && recvMessage.contains("ChatText") && recvMessage.contains("HopLimit") )  // It is a private message 
+        if (recvMessage.contains("Dest") && recvMessage.contains("ChatText") && recvMessage.contains("HopLimit") )  // It is a private message 
         {
             QString dest = recvMessage.value("Dest").toString();
             if (dest  == *myOrigin) // If it is sent to me
@@ -1427,24 +1459,6 @@ void PointToPointMessaging::gotRecvMessage()
                     qDebug() << "PM" << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
                 }
             }
-            /* TODO extra support for one on one talk 
-            if (!pm) // if private message window do not exist
-            {
-                // Add it to the list view
-                addrPortStrList.append(recvOrigin);
-                ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
-
-                pm = new PrivateMessage(addrPortListView->currentIndex(), this);
-                pm->exec();
-            }
-            
-            pm->textview->append(recvMessage.value("ChatText").toString());
-            */
-            
-        }
-        else 
-        {
-            qDebug() << "not normal messages";
         }
     }
 
@@ -1510,6 +1524,8 @@ bool PrivateMessage::eventFilter(QObject *obj, QEvent *event)
     return false;
 }
 
+// ---------------------------------------------------------------------
+// send private message
 void PrivateMessage::gotReturnPressed()
 {
     QVariantMap privateMessageMap;

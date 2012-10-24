@@ -72,6 +72,8 @@ public:
     quint16 port;
 };
 
+// ----------------------------------------------------------------------
+// main window
 class TabDialog : public QDialog
 {
     Q_OBJECT;
