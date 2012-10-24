@@ -34,12 +34,7 @@
 
 class NetSocket;
 class Peer;
-class TabDialog;
-class GossipMessaging;
-class GossipMessagingEntry;
-class PointToPointMessaging;
-class FileSharing;
-class PointToPointMessagingEntry;
+class PeersterDialog;
 class PrivateMessage;
 class FileMetaData;
 
@@ -64,168 +59,35 @@ private:
 
 // ----------------------------------------------------------------------
 // Peer class for storage
-class Peer 
+class Peer
 {
 public:
     Peer(QString h, QHostAddress i, quint16 p): hostname(h), ipaddr(i), port(p) {}
+    QString getHostname() const {
+        return hostname;
+    }
+    QHostAddress getIP() const {
+        return ipaddr;
+    }
+    quint16 getPort() const {
+        return port;
+    }
+
+private:
     QString hostname;
     QHostAddress ipaddr;
     quint16 port;
 };
 
-// ----------------------------------------------------------------------
-// main window
-class TabDialog : public QDialog
-{
-    Q_OBJECT;
-
-public:
-    TabDialog(QWidget* parent = 0);
-    ~TabDialog();
-
-private:
-    QTabWidget *tabWidget;
-    FileSharing *fs;
-    PointToPointMessagingEntry *p2pEntry;
-    GossipMessagingEntry *gmEntry;
-};
-
 
 // ----------------------------------------------------------------------
-// Gossip Messging Tab Contents
-class GossipMessaging : public QWidget 
-{
-	Q_OBJECT;
-
-public:
-	GossipMessaging(QWidget* parent = 0);
-    ~GossipMessaging();
-
-public slots:
-	void gotReturnPressed();
-    void gotRecvMessage();
-    void fwdMessage(QString fwdInfo);
-    void antiEntropy();
-    void addrPortAdded();
-    void lookedUp(const QHostInfo& host);
-    void lookedUpBeforeInvoke(const QHostInfo& host);
-
-private:
-	QTextEdit *textview;
-	QTextEdit *textedit;
-    QLineEdit *addAddrPort;
-    QListView *addrPortListView;
-    NetSocket *sockRecv;
-    bool eventFilter(QObject *obj, QEvent *ev);
-    int randomOriginID;
-    QVariantMap *recvMessageMap;
-    QVariantMap *updateStatusMap;
-    quint32 SeqNo;
-    QString *myOrigin;
-    QTimer *timerForAck;
-    QTimer *timerForAntiEntropy;
-    QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
-    QStringList addrPortStrList;
-    QList<Peer> *peerList;
-};
-
-// ----------------------------------------------------------------------
-class PointToPointMessagingEntry : public QWidget
-{
-    Q_OBJECT;
-
-public:
-    PointToPointMessagingEntry(QWidget* parent = 0);
-
-private:
-    QPushButton* switchButton;
-    PointToPointMessaging * p2p;
-    QVBoxLayout* layout;
-    
-public slots:
-    void switchButtonClicked();
-};
-
-
-// ----------------------------------------------------------------------
-class GossipMessagingEntry : public QWidget
-{
-    Q_OBJECT;
-
-public:
-    GossipMessagingEntry(QWidget* parent = 0);
-
-private:
-    QPushButton* switchButton;
-    GossipMessaging* gm;
-    QVBoxLayout* layout;
-    
-public slots:
-    void switchButtonClicked();
-};
-
-// ----------------------------------------------------------------------
-class FileSharing : public QWidget 
-{
-	Q_OBJECT;
-public:
-	FileSharing(QWidget* parent = 0);
-	~FileSharing();
-
-public slots:
-    void onShareFileBtnClicked();
-    /*
-	void gotReturnPressed();
-    void gotRecvMessage();
-    void fwdMessage(QString fwdInfo);
-    void antiEntropy();
-    void broadcastRM();
-    void addrPortAdded();
-    void lookedUp(const QHostInfo& host);
-    void lookedUpBeforeInvoke(const QHostInfo& host);
-    void openPrivateMessageWin(const QModelIndex&);
-    */
-
-private:
-    QPushButton *shareFileBtn;
-    QGridLayout *layout;
-    QVector<FileMetaData*> filesMetas;
-    
-    /*
-    NetSocket *sockRecv;
-    int randomOriginID;
-    QVariantMap *recvMessageMap;
-    QVariantMap *updateStatusMap;
-    QVariantMap *updateRoutOriSeqMap;
-    quint32 SeqNo;
-    quint32 routMessSeqNo;
-    QString *myOrigin;
-    QTimer *timerForAck;
-    QTimer *timerForRM;
-    QTimer *timerForAntiEntropy;
-    QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
-    QStringList addrPortStrList;
-    QList<Peer> *peerList;
-
-    QListView *originListView;
-    QStringList originStrList;
-
-    QHash<QString, QPair<QHostAddress, quint16> > *nextHopTable;
-
-    QHostAddress* lastIP;
-    quint16 lastPort;
-    */
-};
-
-
-// ----------------------------------------------------------------------
-class PointToPointMessaging : public QWidget 
+class PeersterDialog : public QDialog
 {
 	Q_OBJECT;
     friend class PrivateMessage;
 public:
-	PointToPointMessaging(QWidget* parent = 0);
-	~PointToPointMessaging();
+	PeersterDialog(QWidget* parent = 0);
+	~PeersterDialog();
 
 public slots:
 	void gotReturnPressed();
@@ -237,8 +99,14 @@ public slots:
     void lookedUp(const QHostInfo& host);
     void lookedUpBeforeInvoke(const QHostInfo& host);
     void openPrivateMessageWin(const QModelIndex&);
+    // File Sharing
+    void onShareFileBtnClicked();
+    void onRequestFileBtnClicked();
+    void sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockRequest);
+
 
 private:
+	QGridLayout *layout;
     bool isNoForward;
     bool eventFilter(QObject *obj, QEvent *ev);
 	PrivateMessage *pm;
@@ -268,16 +136,21 @@ private:
 
     QHostAddress* lastIP;
     quint16 lastPort;
+    // file sharing
+    QPushButton *shareFileBtn;
+    QVector<FileMetaData*> filesMetas;
+    QLineEdit *targetNID;
+    QLineEdit *targetFID;
 };
 
 // ----------------------------------------------------------------------
 class PrivateMessage: public QDialog
 {
     Q_OBJECT;
-    friend class PointToPointMessaging;
+    friend class PeersterDialog;
 
 public:
-    PrivateMessage(const QModelIndex& index, PointToPointMessaging* p2p);
+    PrivateMessage(const QModelIndex& index, PeersterDialog* p2p);
 
 public slots:
 	void gotReturnPressed();
@@ -287,11 +160,11 @@ private:
 	QTextEdit *textview;
 	QTextEdit *textedit;
     bool eventFilter(QObject *obj, QEvent *ev);
-    PointToPointMessaging* upperP2P;
+    PeersterDialog* upperP2P;
 };
 
 // ----------------------------------------------------------------------
-//
+// to store info about a sharing file 
 class FileMetaData
 {
 public:
