@@ -41,6 +41,7 @@ class PointToPointMessaging;
 class FileSharing;
 class PointToPointMessagingEntry;
 class PrivateMessage;
+class FileMetaData;
 
 // ----------------------------------------------------------------------
 // upd socket
@@ -173,7 +174,6 @@ public:
 
 public slots:
     void onShareFileBtnClicked();
-    void splitFile(const QString fin, const QString outDir, const int blockSize);
     /*
 	void gotReturnPressed();
     void gotRecvMessage();
@@ -189,6 +189,7 @@ public slots:
 private:
     QPushButton *shareFileBtn;
     QGridLayout *layout;
+    QVector<FileMetaData*> filesMetas;
     
     /*
     NetSocket *sockRecv;
@@ -287,6 +288,37 @@ private:
 	QTextEdit *textedit;
     bool eventFilter(QObject *obj, QEvent *ev);
     PointToPointMessaging* upperP2P;
+};
+
+// ----------------------------------------------------------------------
+//
+class FileMetaData
+{
+public:
+    FileMetaData(const QString fn);
+    QString getFileNameWithPath() const {
+        return fileNameWithPath;
+    }
+    QString getFileNameOnly() const {
+        return fileNameOnly;
+    }
+    quint64 getSize() const {
+        return size;
+    }
+    QByteArray getBlockList() const {
+        return blockList;
+    }
+    QByteArray getBlockListHash() const {
+        return blockListHash;
+    }
+    void splitFile(const QString outDir, const int blockSize);
+
+private:
+    QString fileNameWithPath;
+    QString fileNameOnly;
+    quint64 size;
+    QByteArray blockList;
+    QByteArray blockListHash; // File ID
 };
 
 

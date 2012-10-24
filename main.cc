@@ -1566,59 +1566,80 @@ FileSharing(QWidget* parent)
 void FileSharing::
 onShareFileBtnClicked()
 {
+    // open a dialog
     QStringList fileNames = QFileDialog::getOpenFileNames(this, tr("Add files"), QDir::currentPath(), tr("All files (*.*)"));
-    // if tmp_blocks does not exist, create the temp directory
-    if (!QDir(QDir::currentPath() + tr("/tmp_blocks/")).exists())
-            QDir().mkdir(QDir::currentPath() + tr("/tmp_blocks/"));
-    // split files in fileNames
+    // add files to filesMetas 
     for (int i = 0; i < fileNames.size(); ++i) {
-        splitFile(fileNames.at(i).toLocal8Bit().constData(), QDir::currentPath()+tr("/tmp_blocks/"), 8*1024);
+        filesMetas.append(new FileMetaData(fileNames.at(i).toLocal8Bit().constData()));
     }
 }
 
 // ---------------------------------------------------------------------
+// constructor for FileMetaData
+FileMetaData::
+FileMetaData(const QString fn): 
+    fileNameWithPath(fn), 
+    fileNameOnly(QDir(fileNameWithPath).dirName())
+{ 
+    // if tmp_blocks does not exist, create the temp directory
+    if (!QDir(QDir::currentPath() + QObject::tr("/tmp_blocks/")).exists())
+            QDir().mkdir(QDir::currentPath() + QObject::tr("/tmp_blocks/"));
+    // split the file to currentPath/tmp_blocks/
+    splitFile(QDir::currentPath()+QObject::tr("/tmp_blocks/"), 8*1024);
+}
+
+
+// ---------------------------------------------------------------------
 // split the file into blocks stored in outDir
-void FileSharing::
-splitFile(const QString fileName, const QString outDir, const int blockSize)
+void FileMetaData::
+splitFile(const QString outDir, const int blockSize)
 {
-    QFile qf(fileName);
+    QFile qf(fileNameWithPath);
     if (!qf.open(QIODevice::ReadOnly)) {
         qDebug() << "No such file";
         return;
     }
+    size = qf.size();
     QDataStream fin(&qf);
     char buffer[blockSize];
     int part = 0;
     QCA::Hash shaHash("sha256");
     do {
         int readSize = fin.readRawData(buffer, blockSize);
-        QFile qfOut(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part));
+        QFile qfOut(outDir + fileNameOnly + QObject::tr("_") + QString::number(part));
         if (qfOut.open(QIODevice::WriteOnly)) {
             QDataStream fout(&qfOut);
             fout.writeRawData(buffer, readSize);
             qfOut.close();
         }
         // hash
-        QFile qfHash(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part));
+        QFile qfHash(outDir + fileNameOnly + QObject::tr("_") + QString::number(part));
         if (qfHash.open(QIODevice::ReadOnly)) {
             shaHash.update(&qfHash);
             QCA::MemoryRegion hashA = shaHash.final();
             qDebug() << QCA::arrayToHex(hashA.toByteArray());
+            // save to blockList
+            blockList.append(hashA.toByteArray());
             qfHash.close();
             shaHash.clear();
         }
         ++part;
     } while (!fin.atEnd());
     qf.close();
+    // calculate the hash of blockList
+    shaHash.update(blockList);
+    QCA::MemoryRegion hashA = shaHash.final();
+    qDebug() << "bloclist_has = " << QCA::arrayToHex(hashA.toByteArray());
+    blockList.append(hashA.toByteArray());
 
     // debug: unite file for checking
     /*
-    QFile unitedFile(outDir + QDir(fileName).dirName() + tr("_united"));
+    QFile unitedFile(outDir + QDir(fileNameWithPath).dirName() + tr("_united"));
     unitedFile.open(QIODevice::WriteOnly);
     QDataStream unitedFlow(&unitedFile);
     part = 0;
-    while(QFile::exists(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part))){
-        QFile qfOut(outDir + QDir(fileName).dirName() + tr("_") + QString::number(part++));
+    while(QFile::exists(outDir + QDir(fileNameWithPath).dirName() + tr("_") + QString::number(part))){
+        QFile qfOut(outDir + QDir(fileNameWithPath).dirName() + tr("_") + QString::number(part++));
         qfOut.open(QIODevice::ReadOnly);
         QDataStream fout(&qfOut);
         int readSize = fout.readRawData(buffer, blockSize);
@@ -1636,6 +1657,8 @@ FileSharing::
 {
     delete shareFileBtn;
 	delete layout;
+    for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
+       delete *it;
 }
 
 // ---------------------------------------------------------------------
