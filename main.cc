@@ -141,8 +141,14 @@ PeersterDialog::PeersterDialog(QWidget* parent)
     requestFileBtn = new QPushButton("Request File", this);
     targetNID = new QLineEdit();
     targetFID = new QLineEdit();
+    searchLabel= new QLabel("Search", this);
+    searchKeyWords= new QLineEdit();
+    searchFileBtn = new QPushButton("Search", this);
+    searchQueue = new QQueue<QPair<QString, quint32> >;
+    searchTimer = NULL;
     connect(shareFileBtn, SIGNAL(clicked()), this, SLOT(onShareFileBtnClicked()));
     connect(requestFileBtn, SIGNAL(clicked()), this, SLOT(onRequestFileBtnClicked()));
+    connect(searchFileBtn, SIGNAL(clicked()), this, SLOT(onSearchFileBtnClicked()));
 
 	// Lay out the widgets to appear in the main window.
 	layout = new QGridLayout();
@@ -161,6 +167,9 @@ PeersterDialog::PeersterDialog(QWidget* parent)
 	layout->addWidget(targetNID, 1, 19);
 	layout->addWidget(targetFID, 2, 19);
 	layout->addWidget(requestFileBtn, 3, 19);
+    layout->addWidget(searchLabel, 4, 19);
+    layout->addWidget(searchKeyWords, 5, 19);
+    layout->addWidget(searchFileBtn, 6, 19);
 
     textedit->setFocus();
 
@@ -991,7 +1000,7 @@ sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimi
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
 
-    textview->append("request");
+    textview->append("send block request");
 
     delete message;
     delete bytearrayToSend;
@@ -1022,7 +1031,92 @@ sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit,
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
 
-    textview->append("reply");
+    textview->append("reply block request");
+
+    delete message;
+    delete bytearrayToSend;
+}
+
+// ---------------------------------------------------------------------
+// when searchFileBtn is clicked on 
+void PeersterDialog::
+onSearchFileBtnClicked()
+{
+    QPair<QString, quint32> kv(searchKeyWords->text(), 2);
+    searchQueue->enqueue(kv);
+    // sendSearchRequest(*myOrigin, searchKeyWords->text(), 2);
+    if (searchTimer) {
+        delete searchTimer;
+        searchTimer = NULL;
+    } else {
+        searchTimer = new QTimer(this);
+        connect(searchTimer, SIGNAL(timeout()), this, SLOT(updateSearchQueue()));
+        searchTimer->start(5000);
+    }
+}
+
+// ---------------------------------------------------------------------
+// the search timer will call this periodically to send requests and clean the queue. If the queue finally goes empty, the timer will be deleted
+void PeersterDialog::
+updateSearchQueue() {
+    if (!searchQueue->isEmpty())
+    {
+    }
+}
+
+// ---------------------------------------------------------------------
+// send search request message with dest *host* and *port*
+void PeersterDialog::
+sendSearchRequest(const QString origin, const QString search, const quint32 budget, QHostAddress host, quint16 port)
+{
+    QVariantMap *message = new QVariantMap();
+
+    message->insert(tr("Origin"), origin);
+    message->insert(tr("Search"), search);
+    message->insert(tr("Budget"), budget);
+    
+    // Serialize 
+    QByteArray *bytearrayToSend = new QByteArray();
+    QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
+    bytearrayStreamOut << (*message);
+
+    // Send the datagram 
+    qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
+    if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
+
+    textview->append("send search");
+
+    delete message;
+    delete bytearrayToSend;
+}
+
+// ---------------------------------------------------------------------
+// send search reply message
+void PeersterDialog::
+sendSearchReply(const QString dest, const QString origin, const quint32 hopLimit, const QString searchReply, const QVariantList matchNames, const QVariantList matchIDs)
+{
+    QVariantMap *message = new QVariantMap();
+
+    message->insert(tr("Dest"), dest);
+    message->insert(tr("Origin"), origin);
+    message->insert(tr("HopLimit"), hopLimit);
+    message->insert(tr("SearchReply"), searchReply);
+    message->insert(tr("MatchNames"), matchNames);
+    message->insert(tr("MatchIDs"), matchIDs);
+    
+    // Serialize 
+    QByteArray *bytearrayToSend = new QByteArray();
+    QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
+    bytearrayStreamOut << (*message);
+
+    // Send the datagram 
+    QHostAddress host = nextHopTable->value(dest).first;
+    quint16 port = nextHopTable->value(dest).second;
+
+    qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
+    if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
+
+    textview->append("reply search");
 
     delete message;
     delete bytearrayToSend;

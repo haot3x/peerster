@@ -19,7 +19,6 @@
 #include <QVector>
 #include <QSignalMapper>
 #include <QThread>
-#include <QMapIterator>
 #include <QLineEdit>
 #include <QListView>
 #include <QStringListModel>
@@ -30,6 +29,7 @@
 #include <QFileDialog>
 #include <QtCrypto>
 #include <QIODevice>
+#include <QQueue>
 
 
 class NetSocket;
@@ -104,6 +104,10 @@ public slots:
     void onRequestFileBtnClicked();
     void sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockRequest);
     void sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockReply, const QByteArray &data);
+    void onSearchFileBtnClicked();
+    void sendSearchRequest(const QString origin, const QString search, const quint32 budget, QHostAddress host, quint16 port);
+    void sendSearchReply(const QString dest, const QString origin, const quint32 hopLimit, const QString searchReply, const QVariantList matchNames, const QVariantList matchIDs);
+    void updateSearchQueue();
 
 
 private:
@@ -137,12 +141,17 @@ private:
 
     QHostAddress* lastIP;
     quint16 lastPort;
-    // file sharing
+    // file sharing in column 3
     QPushButton *shareFileBtn;
     QPushButton *requestFileBtn;
     QVector<FileMetaData*> filesMetas;
     QLineEdit *targetNID;
     QLineEdit *targetFID;
+    QLabel *searchLabel;
+    QLineEdit *searchKeyWords;
+    QPushButton *searchFileBtn;
+    QQueue<QPair<QString, quint32> > *searchQueue; // queue for sending search request <QString keyWords, quint32 budget>
+    QTimer *searchTimer;
 };
 
 // ----------------------------------------------------------------------
