@@ -65,6 +65,7 @@ PeersterDialog::PeersterDialog(QWidget* parent)
 	// Read-only text box where we display messages from everyone.
 	textview = new QTextEdit(this);
 	textview->setReadOnly(true);
+    textview->append("meta for test : 59780356851e52fd6a9ec2abf0a459a16cbb48ff1b7ea51da7476ff0c61fe94e");
 
     // Input peer information
     addAddrPort = new QLineEdit();
@@ -137,9 +138,11 @@ PeersterDialog::PeersterDialog(QWidget* parent)
 
     // file sharing
     shareFileBtn = new QPushButton("Share File...", this);
+    requestFileBtn = new QPushButton("Request File", this);
     targetNID = new QLineEdit();
     targetFID = new QLineEdit();
     connect(shareFileBtn, SIGNAL(clicked()), this, SLOT(onShareFileBtnClicked()));
+    connect(requestFileBtn, SIGNAL(clicked()), this, SLOT(onRequestFileBtnClicked()));
 
 	// Lay out the widgets to appear in the main window.
 	layout = new QGridLayout();
@@ -157,6 +160,7 @@ PeersterDialog::PeersterDialog(QWidget* parent)
 	layout->addWidget(shareFileBtn, 0, 19);
 	layout->addWidget(targetNID, 1, 19);
 	layout->addWidget(targetFID, 2, 19);
+	layout->addWidget(requestFileBtn, 3, 19);
 
     textedit->setFocus();
 
@@ -173,7 +177,7 @@ PeersterDialog::PeersterDialog(QWidget* parent)
     timerForRM = new QTimer(this);
     connect(timerForRM , SIGNAL(timeout()), 
         this, SLOT(broadcastRM()));
-    timerForRM->start(30000);
+    timerForRM->start(10000);
 
     // Add hostname:port or ipaddr:port 
     connect(addAddrPort, SIGNAL(returnPressed()),
@@ -356,7 +360,8 @@ void PeersterDialog::gotReturnPressed()
     SeqNo++;
 }
 
-void PeersterDialog::fwdMessage(QString fwdInfo)
+void PeersterDialog::
+fwdMessage(QString fwdInfo)
 {
     // qDebug() << fwdInfo;
     // Parse fwdInfo
@@ -584,8 +589,20 @@ gotRecvMessage()
                             + "[-PORTIS>]" + QString::number(senderPort) 
                             + "[-METYPE>]" + "SM"; 
             fwdMessage(fwdInfo);
+            // update the nextHopTable
+            if (recvOrigin != *myOrigin)
+            {
+                updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
+                nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
+                // Add it to the All dest list view if not exist
+                if (!originStrList.contains(recvOrigin))
+                {
+                    originStrList.append(recvOrigin);
+                    ((QStringListModel*) originListView->model())->setStringList(originStrList);
+                }
+            }
 
-            // If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
+            // NAT punching If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
             // LOOKUP
             if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
             {
@@ -730,9 +747,6 @@ gotRecvMessage()
                     {}
                     else // It is a new routing message I have not heard of
                     {
-                        updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
-                        nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
-
                         //  Exchange my routing message 
                         /*
                         QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(1)
@@ -741,7 +755,10 @@ gotRecvMessage()
                             + "[-METYPE>]" + "RM";
                         fwdMessage(fwdInfo);
                         */
-         
+
+                        // update the nextHopTable
+                        updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
+                        nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
                         // Add it to the All dest list view if not exist
                         if (!originStrList.contains(recvOrigin))
                         {
@@ -761,11 +778,84 @@ gotRecvMessage()
                     }
             }
         }
-        if (recvMessage.contains("Dest") && recvMessage.contains("ChatText") && recvMessage.contains("HopLimit") )  // It is a private message 
+        if (recvMessage.contains("Dest") && recvMessage.contains("HopLimit") )  // It is a private message or block request
         {
             QString dest = recvMessage.value("Dest").toString();
             if (dest  == *myOrigin) // If it is sent to me
-                textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
+            {
+                if (recvMessage.contains("ChatText"))
+                    // if it is a private message
+                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
+                if (recvMessage.contains("Origin") && recvMessage.contains("BlockRequest"))
+                {
+                    // if it is a block request message
+                    QByteArray requestHash = recvMessage.value("BlockRequest").toByteArray();
+                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + (QCA::arrayToHex(recvMessage.value("BlockRequest").toByteArray())));
+                    // find file in local filesMetas
+                    for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
+                    {
+                        if ((*it)->contains(requestHash)) 
+                        {
+                            // if I have the file, pack the file into QByteArray data
+                            QFile readF((*it)->getFilePath(requestHash)); 
+                            qDebug() << (*it)->getFilePath(requestHash);
+                            if (readF.open(QIODevice::ReadOnly))
+                            {
+                                QByteArray data = readF.readAll();
+                                readF.close();
+                                // hash the data
+                                QCA::Hash shaHash("sha256");
+                                shaHash.update(data);
+                                QCA::MemoryRegion hashA = shaHash.final();
+                                QByteArray dataHash = hashA.toByteArray();
+                                // qDebug() << QCA::arrayToHex(dataHash);
+                                // send the file
+                                sendBlockReply(
+                                    recvMessage.value("Origin").toString(),
+                                    *myOrigin, 
+                                    10, 
+                                    dataHash,
+                                    data);
+                            }
+                        }
+                    }
+                }
+                if (recvMessage.contains("Origin") && recvMessage.contains("BlockReply") && recvMessage.contains("Data"))
+                {
+                    // if it is a block reply message
+                    // check the package with hash
+                    QByteArray data(recvMessage.value("Data").toByteArray());
+                    /*
+                    QFile writeFile("tmp");
+                    if (writeFile.open(QIODevice::WriteOnly))
+                    {
+                        QDataStream fout(&writeFile);
+                        fout << data;
+                        writeFile.close();
+                    }
+                    QFile readFile("tmp");
+                    */
+                    QCA::MemoryRegion hashA;
+                        QCA::Hash shaHash("sha256");
+                        shaHash.update(data);
+                        hashA = shaHash.final();
+                        //textview->append(QCA::arrayToHex(hashA.toByteArray()));
+                    /*
+                    if (readFile.open(QIODevice::ReadOnly))
+                    {
+                        QCA::Hash shaHash("sha256");
+                        shaHash.update(&readFile);
+                        readFile.close();
+                        hashA = shaHash.final();
+                    }
+                    */
+                    QByteArray replyHash(recvMessage.value("BlockReply").toByteArray());
+                    if (hashA.toByteArray() == replyHash)
+                    {
+                        textview->append("Recv a block successfully");
+                    }
+                }
+            }
             else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) // If -noforward is not launched
             {
                 recvMessage.insert("HopLimit", (quint32)(recvMessage.value("HopLimit").toInt()-1));
@@ -877,17 +967,8 @@ void PrivateMessage::gotReturnPressed()
     textedit->clear();
 }
 
-
 // ---------------------------------------------------------------------
-// when Request File button clicked
-void PeersterDialog::
-onRequestFileBtnClicked()
-{
-
-}
-
-// ---------------------------------------------------------------------
-// send request message
+// send block request message
 void PeersterDialog::
 sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockRequest)
 {
@@ -903,14 +984,45 @@ sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimi
     QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
     bytearrayStreamOut << (*message);
 
-    /*
     // Send the datagram 
-    qint64 int64Status = mySock.writeDatagram(*bytearrayToSend, host, port);
+    QHostAddress host = nextHopTable->value(dest).first;
+    quint16 port = nextHopTable->value(dest).second;
+
+    qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
-    // qDebug() << (*message);
-    qDebug() << mType << " from " << mySock.getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
-    //qDebug() << "send the map: " << *message;
-    */
+
+    textview->append("request");
+
+    delete message;
+    delete bytearrayToSend;
+}
+
+// ---------------------------------------------------------------------
+// reply block request
+void PeersterDialog::
+sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockReply, const QByteArray &data)
+{
+    QVariantMap *message = new QVariantMap();
+
+    message->insert(tr("Dest"), dest);
+    message->insert(tr("Origin"), origin);
+    message->insert(tr("HopLimit"), hopLimit);
+    message->insert(tr("BlockReply"), blockReply);
+    message->insert(tr("Data"), data);
+    
+    // Serialize 
+    QByteArray *bytearrayToSend = new QByteArray();
+    QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
+    bytearrayStreamOut << (*message);
+
+    // Send the datagram 
+    QHostAddress host = nextHopTable->value(dest).first;
+    quint16 port = nextHopTable->value(dest).second;
+
+    qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
+    if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
+
+    textview->append("reply");
 
     delete message;
     delete bytearrayToSend;
@@ -930,7 +1042,17 @@ onShareFileBtnClicked()
 }
 
 // ---------------------------------------------------------------------
-// constructor for FileMetaData
+// respond to request button click
+void PeersterDialog:: 
+onRequestFileBtnClicked()
+{
+    QCA::init();
+    QByteArray blockRequest(QCA::hexToArray(targetFID->text()));
+    sendBlockRequest(targetNID->text(), *myOrigin, 10, blockRequest);
+}
+
+// ---------------------------------------------------------------------
+// constructor for FileMetaData when given a file name
 FileMetaData::
 FileMetaData(const QString fn): 
     fileNameWithPath(fn), 
@@ -941,6 +1063,7 @@ FileMetaData(const QString fn):
             QDir().mkdir(QDir::currentPath() + QObject::tr("/tmp_blocks/"));
     // split the file to currentPath/tmp_blocks/
     splitFile(QDir::currentPath()+QObject::tr("/tmp_blocks/"), 8*1024);
+    // qDebug() << getSubFilesNum();
 }
 
 
@@ -960,6 +1083,7 @@ splitFile(const QString outDir, const int blockSize)
     int part = 0;
     QCA::Hash shaHash("sha256");
     do {
+        // split one by one
         int readSize = fin.readRawData(buffer, blockSize);
         QFile qfOut(outDir + fileNameOnly + QObject::tr("_") + QString::number(part));
         if (qfOut.open(QIODevice::WriteOnly)) {
@@ -967,14 +1091,20 @@ splitFile(const QString outDir, const int blockSize)
             fout.writeRawData(buffer, readSize);
             qfOut.close();
         }
+        // save path to subFileNameList;
+        subFileNameList.append((outDir + fileNameOnly + QObject::tr("_") + QString::number(part)));
         // hash
         QFile qfHash(outDir + fileNameOnly + QObject::tr("_") + QString::number(part));
         if (qfHash.open(QIODevice::ReadOnly)) {
-            shaHash.update(&qfHash);
+            QByteArray data = qfHash.readAll();
+            shaHash.update(data);
+            //shaHash.update(&qfHash);
             QCA::MemoryRegion hashA = shaHash.final();
             qDebug() << QCA::arrayToHex(hashA.toByteArray());
             // save to blockList
             blockList.append(hashA.toByteArray());
+            // test 
+            // qDebug() << "path:" << getFilePath(hashA.toByteArray());
             qfHash.close();
             shaHash.clear();
         }
@@ -982,10 +1112,29 @@ splitFile(const QString outDir, const int blockSize)
     } while (!fin.atEnd());
     qf.close();
     // calculate the hash of blockList
-    shaHash.update(blockList);
-    QCA::MemoryRegion hashA = shaHash.final();
-    qDebug() << "bloclist_has = " << QCA::arrayToHex(hashA.toByteArray());
-    blockList.append(hashA.toByteArray());
+    //shaHash.update(blockList);
+    //QCA::MemoryRegion hashA = shaHash.final();
+    //shaHash.clear();
+    //qDebug() << "meta : " << QCA::arrayToHex(hashA.toByteArray());
+    QFile qfOut(outDir + fileNameOnly + QObject::tr("_meta"));
+    metaFileName = outDir + fileNameOnly + QObject::tr("_meta");
+    if (qfOut.open(QIODevice::WriteOnly)) {
+        QDataStream fout(&qfOut);
+        fout << blockList;
+        qfOut.close();
+    }
+    // test the file's hash 
+    QFile readMeta(metaFileName);
+    QByteArray hashAll;
+    if (readMeta.open(QIODevice::ReadOnly))
+    {
+        shaHash.update(&readMeta);
+        hashAll = shaHash.final().toByteArray();
+        qDebug() << QCA::arrayToHex(hashAll);
+        readMeta.close();
+    }
+    blockListHash.append(hashAll);
+    // qDebug() << "path:" << getFilePath(hashA.toByteArray());
 
     // debug: unite file for checking
     /*

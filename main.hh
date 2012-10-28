@@ -103,6 +103,7 @@ public slots:
     void onShareFileBtnClicked();
     void onRequestFileBtnClicked();
     void sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockRequest);
+    void sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockReply, const QByteArray &data);
 
 
 private:
@@ -138,6 +139,7 @@ private:
     quint16 lastPort;
     // file sharing
     QPushButton *shareFileBtn;
+    QPushButton *requestFileBtn;
     QVector<FileMetaData*> filesMetas;
     QLineEdit *targetNID;
     QLineEdit *targetFID;
@@ -168,7 +170,7 @@ private:
 class FileMetaData
 {
 public:
-    FileMetaData(const QString fn);
+    FileMetaData(const QString fn); // init according to a file path
     QString getFileNameWithPath() const {
         return fileNameWithPath;
     }
@@ -184,6 +186,21 @@ public:
     QByteArray getBlockListHash() const {
         return blockListHash;
     }
+    int getSubFilesNum() const {
+        return blockList.size() / 32;
+    }
+    bool contains(QByteArray hash) {
+        if (blockList.indexOf(hash) == -1 && hash != blockListHash) return false;
+        else return true;
+    }
+    QString getFilePath(QByteArray hash) const {
+        if ( hash == blockListHash) 
+            return metaFileName;
+        else 
+            return subFileNameList.at((blockList.indexOf(hash)/32));
+    }
+
+private:
     void splitFile(const QString outDir, const int blockSize);
 
 private:
@@ -192,6 +209,8 @@ private:
     quint64 size;
     QByteArray blockList;
     QByteArray blockListHash; // File ID
+    QStringList subFileNameList; // path of blockHash0, blockHash1, .., blockHashN
+    QString metaFileName; // hash file path of File ID
 };
 
 
