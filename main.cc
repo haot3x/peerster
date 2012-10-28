@@ -138,12 +138,15 @@ PeersterDialog::PeersterDialog(QWidget* parent)
 
     // file sharing
     shareFileBtn = new QPushButton("Share File...", this);
+    shareFileBtn->setAutoDefault(false);
     requestFileBtn = new QPushButton("Request File", this);
+    requestFileBtn->setAutoDefault(false);
     targetNID = new QLineEdit();
     targetFID = new QLineEdit();
     searchLabel= new QLabel("Search", this);
     searchKeyWords= new QLineEdit();
     searchFileBtn = new QPushButton("Search", this);
+    searchFileBtn->setAutoDefault(false);
     searchQueue = new QQueue<QPair<QString, quint32> >;
     searchTimer = NULL;
     connect(shareFileBtn, SIGNAL(clicked()), this, SLOT(onShareFileBtnClicked()));
@@ -321,10 +324,10 @@ void PeersterDialog::antiEntropy()
 {
     if (updateStatusMap->contains(*myOrigin))
     {
-        // Random pick up a peer from peerlist
-                    Peer destPeer = peerList->at(qrand()%(peerList->size()));
+        // randomly pick up a peer from peerlist
+        Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
-        // Send the message
+        // send the message
         QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(updateStatusMap->value(*myOrigin).toInt() + 1)
             + "[-ADDRIS>]" + destPeer.getIP().toString()
             + "[-PORTIS>]" + QString::number(destPeer.getPort())
@@ -787,7 +790,7 @@ gotRecvMessage()
                     }
             }
         }
-        if (recvMessage.contains("Dest") && recvMessage.contains("HopLimit") )  // It is a private message or block request
+        if (recvMessage.contains("Dest") && recvMessage.contains("HopLimit") )  // It is a private message or block request or block reply 
         {
             QString dest = recvMessage.value("Dest").toString();
             if (dest  == *myOrigin) // If it is sent to me
@@ -834,22 +837,15 @@ gotRecvMessage()
                     // if it is a block reply message
                     // check the package with hash
                     QByteArray data(recvMessage.value("Data").toByteArray());
-                    /*
-                    QFile writeFile("tmp");
-                    if (writeFile.open(QIODevice::WriteOnly))
-                    {
-                        QDataStream fout(&writeFile);
-                        fout << data;
-                        writeFile.close();
-                    }
-                    QFile readFile("tmp");
-                    */
+
+
                     QCA::MemoryRegion hashA;
                         QCA::Hash shaHash("sha256");
                         shaHash.update(data);
                         hashA = shaHash.final();
                         //textview->append(QCA::arrayToHex(hashA.toByteArray()));
                     /*
+                    QFile readFile("tmp");
                     if (readFile.open(QIODevice::ReadOnly))
                     {
                         QCA::Hash shaHash("sha256");
@@ -861,7 +857,16 @@ gotRecvMessage()
                     QByteArray replyHash(recvMessage.value("BlockReply").toByteArray());
                     if (hashA.toByteArray() == replyHash)
                     {
-                        textview->append("Recv a block successfully");
+                        textview->append("Recv directly a block successfully, saved as " + QCA::arrayToHex(replyHash));
+
+                        // write to file 
+                        QFile writeFile(QCA::arrayToHex(replyHash));
+                        if (writeFile.open(QIODevice::WriteOnly))
+                        {
+                            QDataStream fout(&writeFile);
+                            fout << data;
+                            writeFile.close();
+                        }
                     }
                 }
             }
@@ -886,10 +891,82 @@ gotRecvMessage()
                 }
             }
         }
+        // if it is a search request message
+        if (recvMessage.contains("Origin") && recvMessage.contains("Search") && recvMessage.contains("Budget"))
+        {
+            QString origin = recvMessage.value("Origin").toString();
+            QString search = recvMessage.value("Search").toString();
+            quint32 budget = recvMessage.value("Budget").toInt(); 
+            // search names of the files stored locally
+            // find file in local filesMetas
+            QVariantList matchNames;
+            QVariantList matchIDs;
+            for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
+            {
+                if ((*it)->contains(search))
+                {
+                    matchNames.push_back((*it)->getFileNameOnly());
+                    matchIDs.push_back((*it)->getBlockListHash());
+                }
+            }
+            // send search reply 
+            sendSearchReply(origin, *myOrigin, 10, search, matchNames, matchIDs);
+
+            // forward to random neighbors if budget allows
+            quint32 newBudget = budget - 1;
+            if (newBudget > 0) {
+                int nodes; // number of nodes to send
+                if (newBudget >= (quint32)peerList->size()){
+                    nodes = peerList->size();
+                } else 
+                    nodes = newBudget;
+                // randomly pick up nodes of peers 
+                int nPeers[nodes];
+                int i = 0;
+                while (i != nodes) {
+                    nPeers[i] = qrand()%peerList->size();
+                    bool repeatFlag = false;
+                    for (int j = 0; j < i; ++j)
+                        if (nPeers[i] == nPeers[j]) repeatFlag = true;
+                    if (repeatFlag == false) ++i;
+                }
+                // send search message
+                quint32 budgetPerNode;
+                quint32 restBudget = 0;
+                if ((float)newBudget/nodes <= 1) budgetPerNode = 1;
+                else {
+                    budgetPerNode = newBudget/nodes;
+                    restBudget = newBudget%nodes;
+                }
+                for ( i = 0; i < nodes; ++i) {
+                    Peer destPeer = peerList->at(nPeers[i]);
+                    quint32 myBudget = budgetPerNode;
+                    if (restBudget > 0) {
+                        ++myBudget;
+                        --restBudget;
+                    }
+                    sendSearchRequest(origin, search, myBudget, QHostAddress(destPeer.getIP()), destPeer.getPort());
+                }
+            }
+        }
     }
 
 }
 
+// ---------------------------------------------------------------------
+// whether file name contains the key words?
+bool FileMetaData::
+contains(QString keyWords) const { // overload for search key words
+        QStringList list = keyWords.split(QRegExp("\\s+"));
+        bool contains = false;
+        for (int i = 0; i < list.size(); ++i)
+        {
+            if (fileNameOnly.indexOf(list.at(i).toLocal8Bit().constData()) != -1) contains = true;
+        }
+        return contains;
+}
+
+// ---------------------------------------------------------------------
 // Tian. catch the returnPressed event to send the message
 bool PeersterDialog::eventFilter(QObject *obj, QEvent *event)
 {
@@ -1042,25 +1119,68 @@ sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit,
 void PeersterDialog::
 onSearchFileBtnClicked()
 {
-    QPair<QString, quint32> kv(searchKeyWords->text(), 2);
+    QPair<QString, quint32> kv(searchKeyWords->text(), 1);
     searchQueue->enqueue(kv);
     // sendSearchRequest(*myOrigin, searchKeyWords->text(), 2);
-    if (searchTimer) {
+    if (searchTimer != NULL) {
         delete searchTimer;
         searchTimer = NULL;
     } else {
+        qDebug() << "foo";
         searchTimer = new QTimer(this);
         connect(searchTimer, SIGNAL(timeout()), this, SLOT(updateSearchQueue()));
-        searchTimer->start(5000);
+        // repeat the search once per second
+        searchTimer->start(1000);
     }
 }
 
 // ---------------------------------------------------------------------
 // the search timer will call this periodically to send requests and clean the queue. If the queue finally goes empty, the timer will be deleted
 void PeersterDialog::
-updateSearchQueue() {
-    if (!searchQueue->isEmpty())
-    {
+updateSearchQueue() 
+{
+    if (!searchQueue->isEmpty()) {
+        // resend all the pairs in the queue and add their budget
+
+        // a new queue for iterating the original queue
+        QQueue<QPair<QString, quint32> > *newQueue = new QQueue<QPair<QString, quint32> > ;
+        while (!searchQueue->isEmpty()) {
+            QPair<QString, quint32> searchRequest = searchQueue->dequeue();
+            if (searchRequest.second > 100) {
+            // if the budget exceeds 100, do nothing and do not store into the new queue
+            } else {
+                const quint32 newBudget = 2*searchRequest.second;
+                int nodes; // number of nodes to send
+                if (newBudget >= (quint32)peerList->size()) nodes = peerList->size();
+                else nodes = newBudget;
+                // randomly pick up nodes of peers 
+                int nPeers[nodes];
+                int i = 0;
+                while (i != nodes) {
+                    nPeers[i] = qrand()%peerList->size();
+                    bool repeatFlag = false;
+                    for (int j = 0; j < i; ++j)
+                        if (nPeers[i] == nPeers[j]) repeatFlag = true;
+                    if (repeatFlag == false) ++i;
+                }
+                // send search message
+                for ( i = 0; i < nodes; ++i) {
+                    Peer destPeer = peerList->at(nPeers[i]);
+                    sendSearchRequest(*myOrigin, searchRequest.first, newBudget, QHostAddress(destPeer.getIP()), destPeer.getPort());
+                }
+                // enqueue the new queue
+                newQueue->enqueue(QPair<QString, quint32>(searchRequest.first, newBudget));
+            }
+        }
+        delete searchQueue;
+        searchQueue = newQueue;
+        /* debug
+        static int debug;
+        qDebug() << debug++;
+        */
+    } else {
+        delete searchTimer;
+        searchTimer = NULL;
     }
 }
 
@@ -1069,6 +1189,11 @@ updateSearchQueue() {
 void PeersterDialog::
 sendSearchRequest(const QString origin, const QString search, const quint32 budget, QHostAddress host, quint16 port)
 {
+    qDebug() << origin;
+    qDebug() << search;
+    qDebug() << budget;
+    qDebug() << host;
+    qDebug() << port;
     QVariantMap *message = new QVariantMap();
 
     message->insert(tr("Origin"), origin);
@@ -1249,6 +1374,7 @@ splitFile(const QString outDir, const int blockSize)
 }
 
 // ---------------------------------------------------------------------
+// main program entry
 int main(int argc, char **argv)
 {
     // support crypto

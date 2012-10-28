@@ -198,10 +198,11 @@ public:
     int getSubFilesNum() const {
         return blockList.size() / 32;
     }
-    bool contains(QByteArray hash) {
+    bool contains(QByteArray hash) { // contains FID ?
         if (blockList.indexOf(hash) == -1 && hash != blockListHash) return false;
         else return true;
     }
+    bool contains(QString keyWords) const ; // overload for search key words
     QString getFilePath(QByteArray hash) const {
         if ( hash == blockListHash) 
             return metaFileName;
