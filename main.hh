@@ -227,7 +227,7 @@ public:
     }
     void fillBlockList(QByteArray &data) {
         blockList = data;
-        qDebug() << "getSubFilesNum " << getSubFilesNum();
+        //qDebug() << "getSubFilesNum " << getSubFilesNum();
         // subFileNameList.reserve(getSubFilesNum());
         for (int i = 0; i < getSubFilesNum(); ++i )
             subFileNameList.append("");
@@ -236,7 +236,7 @@ public:
         return subFileNameList.at(index);
     }
     void setSubFilePath(const int index, QString path) {
-        qDebug() << index << " " << path;
+        //qDebug() << index << " " << path;
         subFileNameList.replace(index, path);
     }
     void setMetaFilePath(QString path) {

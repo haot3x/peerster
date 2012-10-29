@@ -162,7 +162,7 @@ PeersterDialog()
     connect(searchResultsListView, SIGNAL(doubleClicked(const QModelIndex& )), this, SLOT(downloadFile(const QModelIndex& )));
     // if tmp_blocks does not exist, create the temp directory
     if (!QDir(QObject::tr("tmp_blocks/")).exists())
-            QDir().mkdir(QObject::tr("/tmp_blocks/"));
+            QDir().mkdir(QObject::tr("tmp_blocks/"));
     if (!QDir(QObject::tr("recv_blocks/")).exists())
             QDir().mkdir(QObject::tr("recv_blocks/"));
 
@@ -815,7 +815,7 @@ gotRecvMessage()
                 {
                     // if it is a block request message
                     QByteArray requestHash = recvMessage.value("BlockRequest").toByteArray();
-                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + (QCA::arrayToHex(recvMessage.value("BlockRequest").toByteArray())));
+                    //textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + (QCA::arrayToHex(recvMessage.value("BlockRequest").toByteArray())));
                     // find file in local filesMetas
                     for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
                     {
@@ -823,7 +823,7 @@ gotRecvMessage()
                         {
                             // if I have the file, pack the file into QByteArray data
                             QFile readF((*it)->getFilePath(requestHash)); 
-                            qDebug() << (*it)->getFilePath(requestHash);
+                            // qDebug() << (*it)->getFilePath(requestHash);
                             if (readF.open(QIODevice::ReadOnly))
                             {
                                 QByteArray data = readF.readAll();
@@ -860,7 +860,7 @@ gotRecvMessage()
                     QByteArray replyHash(recvMessage.value("BlockReply").toByteArray());
                     if (hashA.toByteArray() == replyHash)
                     {
-                        textview->append("Recv " + QCA::arrayToHex(replyHash));
+                        //textview->append("Recv " + QCA::arrayToHex(replyHash));
                         // check info and request all files and combine
                         for (QVector<FileMetaData*>::iterator it = recvFilesMetas.begin(); it < recvFilesMetas.end(); it++) {
                             if ((*it)->contains(replyHash)) {
@@ -895,10 +895,11 @@ gotRecvMessage()
                                 bool completeFlag = true;
                                 for (int i = 0; i < (*it)->getSubFilesNum(); ++i) {
                                     if ((*it)->getSubFilePath(i).indexOf("recv_blocks") == -1) completeFlag = false;
-                                    qDebug() << completeFlag;
+                                    // qDebug() << completeFlag;
                                 }
                                 if (completeFlag == true) {
                                     (*it)->uniteFile(tr("recv_blocks/"), 8*1024);
+                                    textview->append("downloaded to recv_blocks/" + (*it)->getFileNameOnly());
                                 }
                             }
                         }
@@ -1055,9 +1056,6 @@ void PeersterDialog::
 downloadFile(const QModelIndex& index)
 {
     FileMetaData *downloadTaget = recvFilesMetas.at(index.row());
-    qDebug() << downloadTaget->getOriginNID();
-    qDebug() << *myOrigin;
-    qDebug() << downloadTaget->getBlockListHash();
     sendBlockRequest(downloadTaget->getOriginNID(), *myOrigin, 10, downloadTaget->getBlockListHash());
 }
 
@@ -1154,7 +1152,7 @@ sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimi
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
 
-    textview->append("send block request");
+    //textview->append("send block request");
 
     delete message;
     delete bytearrayToSend;
@@ -1185,7 +1183,7 @@ sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit,
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
 
-    textview->append("reply block request");
+    //textview->append("reply block request");
 
     delete message;
     delete bytearrayToSend;
@@ -1373,12 +1371,14 @@ uniteFile(const QString outDir, const int blockSize)
     char buffer[blockSize];
     int part = 0;
     while(QFile::exists(outDir + getFileNameOnly() + QObject::tr("_") + QString::number(part))){
-        QFile qfOut(outDir + getFileNameOnly() + QObject::tr("_") + QString::number(part++));
+        QFile qfOut(outDir + getFileNameOnly() + QObject::tr("_") + QString::number(part));
         qfOut.open(QIODevice::ReadOnly);
         QDataStream fout(&qfOut);
         int readSize = fout.readRawData(buffer, blockSize);
         qfOut.close();
         unitedFlow.writeRawData(buffer, readSize);
+        QFile::remove(outDir + getFileNameOnly() + QObject::tr("_") + QString::number(part));
+        ++part;
     }
     unitedFile.close();
 }
