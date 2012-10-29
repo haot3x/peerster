@@ -108,6 +108,7 @@ public slots:
     void sendSearchRequest(const QString origin, const QString search, const quint32 budget, QHostAddress host, quint16 port);
     void sendSearchReply(const QString dest, const QString origin, const quint32 hopLimit, const QString searchReply, const QVariantList matchNames, const QVariantList matchIDs);
     void updateSearchQueue();
+    void downloadFile(const QModelIndex&);
 
 
 private:
@@ -141,10 +142,15 @@ private:
 
     QHostAddress* lastIP;
     quint16 lastPort;
+    // TODO refactor
+    QLabel *destListLabel;
+    QLabel *neighborListLabel;
+
     // file sharing in column 3
     QPushButton *shareFileBtn;
     QPushButton *requestFileBtn;
     QVector<FileMetaData*> filesMetas;
+    QVector<FileMetaData*> recvFilesMetas;
     QLineEdit *targetNID;
     QLineEdit *targetFID;
     QLabel *searchLabel;
@@ -152,6 +158,11 @@ private:
     QPushButton *searchFileBtn;
     QQueue<QPair<QString, quint32> > *searchQueue; // queue for sending search request <QString keyWords, quint32 budget>
     QTimer *searchTimer;
+    // list view
+    QListView *searchResultsListView;
+    QStringList *searchResultsStringList;
+    QStringListModel *searchResultsStringListModel;
+    QVariantMap *searchResults;
 };
 
 // ----------------------------------------------------------------------
@@ -180,6 +191,8 @@ class FileMetaData
 {
 public:
     FileMetaData(const QString fn); // init according to a file path
+    FileMetaData(const QString name, const QByteArray FID, const QString NID):
+        fileNameOnly(name), blockListHash(FID), originNID(NID) {}; // init according recv info 
     QString getFileNameWithPath() const {
         return fileNameWithPath;
     }
@@ -209,6 +222,9 @@ public:
         else 
             return subFileNameList.at((blockList.indexOf(hash)/32));
     }
+    QString getOriginNID() const {
+        return originNID;
+    }
 
 private:
     void splitFile(const QString outDir, const int blockSize);
@@ -221,6 +237,7 @@ private:
     QByteArray blockListHash; // File ID
     QStringList subFileNameList; // path of blockHash0, blockHash1, .., blockHashN
     QString metaFileName; // hash file path of File ID
+    QString originNID;
 };
 
 

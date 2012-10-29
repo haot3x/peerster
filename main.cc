@@ -131,9 +131,9 @@ PeersterDialog::PeersterDialog(QWidget* parent)
     textedit->installEventFilter(this);
 
     // Set labels
-    QLabel *destListLabel = new QLabel("All dest(DoubleClick)", this);
+    destListLabel = new QLabel("All dest(DoubleClick)", this);
     // destListLabel.setText("All destinations (DoubleClick to talk)");
-    QLabel *neighborListLabel = new QLabel("    Direct neighbors", this);
+    neighborListLabel = new QLabel("    Direct neighbors", this);
     //neighborListLabel.setText("Direct neighbors");
 
     // file sharing
@@ -149,9 +149,17 @@ PeersterDialog::PeersterDialog(QWidget* parent)
     searchFileBtn->setAutoDefault(false);
     searchQueue = new QQueue<QPair<QString, quint32> >;
     searchTimer = NULL;
+    // search results list view
+    searchResultsListView = new QListView();
+    searchResultsStringList = new QStringList();
+    searchResultsStringListModel = new QStringListModel(*searchResultsStringList);
+    searchResultsListView->setModel(searchResultsStringListModel);
+    searchResultsListView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    // connect signal and slot
     connect(shareFileBtn, SIGNAL(clicked()), this, SLOT(onShareFileBtnClicked()));
     connect(requestFileBtn, SIGNAL(clicked()), this, SLOT(onRequestFileBtnClicked()));
     connect(searchFileBtn, SIGNAL(clicked()), this, SLOT(onSearchFileBtnClicked()));
+    connect(originListView, SIGNAL(doubleClicked(const QModelIndex& )), this, SLOT(downloadFile(const QModelIndex& )));
 
 	// Lay out the widgets to appear in the main window.
 	layout = new QGridLayout();
@@ -159,20 +167,20 @@ PeersterDialog::PeersterDialog(QWidget* parent)
 	layout->addWidget(textview, 0, 0, 13, 1);
 	layout->addWidget(textedit, 14, 0, 1, 1);
     // second column
-    layout->addWidget(destListLabel, 0, 17, 1, 1);
-    layout->addWidget(originListView, 1, 17, -1, 1);
-    // third column
-    layout->addWidget(neighborListLabel, 0, 18, 1, 1);
-    layout->addWidget(addAddrPort, 1, 18, 1, 1); 
-    layout->addWidget(addrPortListView, 2, 18, -1, 1);
+    layout->addWidget(destListLabel, 0, 17);
+    layout->addWidget(originListView, 1, 17, 4, 1);
+    layout->addWidget(neighborListLabel, 5, 17);
+    layout->addWidget(addAddrPort, 6, 17); 
+    layout->addWidget(addrPortListView, 7, 17, -1, 1);
     // firth column
 	layout->addWidget(shareFileBtn, 0, 19);
 	layout->addWidget(targetNID, 1, 19);
 	layout->addWidget(targetFID, 2, 19);
 	layout->addWidget(requestFileBtn, 3, 19);
-    layout->addWidget(searchLabel, 4, 19);
-    layout->addWidget(searchKeyWords, 5, 19);
-    layout->addWidget(searchFileBtn, 6, 19);
+    layout->addWidget(searchLabel, 5, 19);
+    layout->addWidget(searchKeyWords, 6, 19);
+    layout->addWidget(searchFileBtn, 7, 19);
+    layout->addWidget(searchResultsListView, 8, 19, -1, 1);
 
     textedit->setFocus();
 
@@ -790,7 +798,7 @@ gotRecvMessage()
                     }
             }
         }
-        if (recvMessage.contains("Dest") && recvMessage.contains("HopLimit") )  // It is a private message or block request or block reply 
+        if (recvMessage.contains("Dest") && recvMessage.contains("HopLimit") )  // It is a private message | block request | block reply | search reply
         {
             QString dest = recvMessage.value("Dest").toString();
             if (dest  == *myOrigin) // If it is sent to me
@@ -869,6 +877,27 @@ gotRecvMessage()
                         }
                     }
                 }
+                if (recvMessage.contains("Origin") && recvMessage.contains("SearchReply") && recvMessage.contains("MatchNames") && recvMessage.contains("MatchIDs"))
+                {
+                    // if it is a search reply message
+                    // TODO
+                    QVariantList matchNames = recvMessage.value("MatchNames").toList();
+                    QVariantList matchIDs = recvMessage.value("MatchIDs").toList();
+                    QString origin = recvMessage.value("Origin").toString();
+                    for (int i = 0; i < matchNames.size(); ++i) {
+                        // check whether I have received the information
+                        bool recvFlag = false;
+                        for (QVector<FileMetaData*>::iterator it = recvFilesMetas.begin(); it < recvFilesMetas.end(); it++)
+                            if ((*it)->contains(matchIDs.at(i).toByteArray())) recvFlag = true;
+                        if (recvFlag == false) {
+                            // update recv files meta information
+                            recvFilesMetas.append(new FileMetaData(matchNames.at(i).toString(), matchIDs.at(i).toByteArray(), origin));
+                            // update search results list view
+                            searchResultsStringList->append(matchNames.at(i).toString());
+                            ((QStringListModel*) searchResultsListView->model())->setStringList(*searchResultsStringList);
+                        }
+                    }
+                }
             }
             else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) // If -noforward is not launched
             {
@@ -901,16 +930,19 @@ gotRecvMessage()
             // find file in local filesMetas
             QVariantList matchNames;
             QVariantList matchIDs;
+            bool isFound = false;
             for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
             {
                 if ((*it)->contains(search))
                 {
+                    isFound = true;
                     matchNames.push_back((*it)->getFileNameOnly());
                     matchIDs.push_back((*it)->getBlockListHash());
                 }
             }
-            // send search reply 
-            sendSearchReply(origin, *myOrigin, 10, search, matchNames, matchIDs);
+            // send search reply if files are found
+            if (isFound == true && search != "")
+                sendSearchReply(origin, *myOrigin, 10, search, matchNames, matchIDs);
 
             // forward to random neighbors if budget allows
             quint32 newBudget = budget - 1;
@@ -961,13 +993,14 @@ contains(QString keyWords) const { // overload for search key words
         bool contains = false;
         for (int i = 0; i < list.size(); ++i)
         {
-            if (fileNameOnly.indexOf(list.at(i).toLocal8Bit().constData()) != -1) contains = true;
+            // all comparisons are in lowercase
+            if (fileNameOnly.toLower().indexOf(QString(list.at(i).toLocal8Bit().constData()).toLower()) != -1) contains = true;
         }
         return contains;
 }
 
 // ---------------------------------------------------------------------
-// Tian. catch the returnPressed event to send the message
+// catch the returnPressed event to send the message
 bool PeersterDialog::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj == textedit && event->type() == QEvent::KeyPress)
@@ -987,7 +1020,21 @@ bool PeersterDialog::eventFilter(QObject *obj, QEvent *event)
     return false;
 }
 
-PrivateMessage::PrivateMessage(const QModelIndex& index, PeersterDialog* p2p)
+// ---------------------------------------------------------------------
+// respond to double click on search results and download the file
+void PeersterDialog::
+downloadFile(const QModelIndex& index)
+{
+    // TODO
+    FileMetaData *downloadTaget = recvFilesMetas.at(index.row());
+    sendBlockRequest(downloadTaget->getOriginNID(), *myOrigin, 10, downloadTaget->getBlockListHash());
+    textview->append("download");
+}
+
+// ---------------------------------------------------------------------
+// private message window
+PrivateMessage::
+PrivateMessage(const QModelIndex& index, PeersterDialog* p2p)
 {
     upperP2P = p2p;
     //qDebug() << *(upperP2P->updateStatusMap);
@@ -1126,7 +1173,6 @@ onSearchFileBtnClicked()
         delete searchTimer;
         searchTimer = NULL;
     } else {
-        qDebug() << "foo";
         searchTimer = new QTimer(this);
         connect(searchTimer, SIGNAL(timeout()), this, SLOT(updateSearchQueue()));
         // repeat the search once per second
@@ -1189,11 +1235,14 @@ updateSearchQueue()
 void PeersterDialog::
 sendSearchRequest(const QString origin, const QString search, const quint32 budget, QHostAddress host, quint16 port)
 {
+    /* debug
     qDebug() << origin;
     qDebug() << search;
     qDebug() << budget;
     qDebug() << host;
     qDebug() << port;
+    */
+    
     QVariantMap *message = new QVariantMap();
 
     message->insert(tr("Origin"), origin);
