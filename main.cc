@@ -34,7 +34,8 @@ bool NetSocket::bind()
 	return false;
 }
 
-PeersterDialog::PeersterDialog(QWidget* parent)
+PeersterDialog::
+PeersterDialog()
 {
     // Initial next-hop routing table
     nextHopTable = new QHash<QString, QPair<QHostAddress, quint16> >();
@@ -65,7 +66,6 @@ PeersterDialog::PeersterDialog(QWidget* parent)
 	// Read-only text box where we display messages from everyone.
 	textview = new QTextEdit(this);
 	textview->setReadOnly(true);
-    textview->append("meta for test : 59780356851e52fd6a9ec2abf0a459a16cbb48ff1b7ea51da7476ff0c61fe94e");
 
     // Input peer information
     addAddrPort = new QLineEdit();
@@ -159,7 +159,12 @@ PeersterDialog::PeersterDialog(QWidget* parent)
     connect(shareFileBtn, SIGNAL(clicked()), this, SLOT(onShareFileBtnClicked()));
     connect(requestFileBtn, SIGNAL(clicked()), this, SLOT(onRequestFileBtnClicked()));
     connect(searchFileBtn, SIGNAL(clicked()), this, SLOT(onSearchFileBtnClicked()));
-    connect(originListView, SIGNAL(doubleClicked(const QModelIndex& )), this, SLOT(downloadFile(const QModelIndex& )));
+    connect(searchResultsListView, SIGNAL(doubleClicked(const QModelIndex& )), this, SLOT(downloadFile(const QModelIndex& )));
+    // if tmp_blocks does not exist, create the temp directory
+    if (!QDir(QObject::tr("tmp_blocks/")).exists())
+            QDir().mkdir(QObject::tr("/tmp_blocks/"));
+    if (!QDir(QObject::tr("recv_blocks/")).exists())
+            QDir().mkdir(QObject::tr("recv_blocks/"));
 
 	// Lay out the widgets to appear in the main window.
 	layout = new QGridLayout();
@@ -840,47 +845,69 @@ gotRecvMessage()
                         }
                     }
                 }
+
+                // if it is a block reply message
                 if (recvMessage.contains("Origin") && recvMessage.contains("BlockReply") && recvMessage.contains("Data"))
                 {
-                    // if it is a block reply message
+                    // TODO should i use BlockReply?
+                    QString origin = recvMessage.value("Origin").toString();
                     // check the package with hash
                     QByteArray data(recvMessage.value("Data").toByteArray());
-
-
                     QCA::MemoryRegion hashA;
-                        QCA::Hash shaHash("sha256");
-                        shaHash.update(data);
-                        hashA = shaHash.final();
-                        //textview->append(QCA::arrayToHex(hashA.toByteArray()));
-                    /*
-                    QFile readFile("tmp");
-                    if (readFile.open(QIODevice::ReadOnly))
-                    {
-                        QCA::Hash shaHash("sha256");
-                        shaHash.update(&readFile);
-                        readFile.close();
-                        hashA = shaHash.final();
-                    }
-                    */
+                    QCA::Hash shaHash("sha256");
+                    shaHash.update(data);
+                    hashA = shaHash.final();
                     QByteArray replyHash(recvMessage.value("BlockReply").toByteArray());
                     if (hashA.toByteArray() == replyHash)
                     {
-                        textview->append("Recv directly a block successfully, saved as " + QCA::arrayToHex(replyHash));
+                        textview->append("Recv " + QCA::arrayToHex(replyHash));
+                        // check info and request all files and combine
+                        for (QVector<FileMetaData*>::iterator it = recvFilesMetas.begin(); it < recvFilesMetas.end(); it++) {
+                            if ((*it)->contains(replyHash)) {
+                                QString sequence;
+                                QString fileName;
+                                if ((*it)->getBlockListHash() == replyHash) {
+                                    // if it is a meta file, fill the recvFilesMetas and request the resting files
+                                    (*it)->fillBlockList(data);
+                                    sequence = tr("meta");
+                                    fileName = tr("recv_blocks/") + (*it)->getFileNameOnly() + tr("_") + (sequence);
+                                    (*it)->setMetaFilePath(fileName);
 
-                        // write to file 
-                        QFile writeFile(QCA::arrayToHex(replyHash));
-                        if (writeFile.open(QIODevice::WriteOnly))
-                        {
-                            QDataStream fout(&writeFile);
-                            fout << data;
-                            writeFile.close();
+                                    // request the resting sub files
+                                    for (int i = 0; i < (*it)->getSubFilesNum(); ++i)
+                                        sendBlockRequest(origin, *myOrigin, 10, (*it)->getBlockList().mid(i*32, 32));
+                                    
+                                } else {
+                                    // if it is a sub file 
+                                    // write the sub file 
+                                    // textview->append(QString::number((*it)->getBlockList().indexOf(replyHash)));
+                                    sequence = QString::number((*it)->getBlockList().indexOf(replyHash)/32);
+                                    fileName = tr("recv_blocks/") + (*it)->getFileNameOnly() + tr("_") + (sequence);
+                                    (*it)->setSubFilePath((*it)->getBlockList().indexOf(replyHash)/32, fileName);
+                                } 
+                                // write to file
+                                QFile writeFile(fileName);
+                                if (writeFile.open(QIODevice::WriteOnly)) {
+                                    writeFile.write(data.data(), data.size());
+                                    writeFile.close();
+                                }
+                                // if all files are presented then combine them into one
+                                bool completeFlag = true;
+                                for (int i = 0; i < (*it)->getSubFilesNum(); ++i) {
+                                    if ((*it)->getSubFilePath(i).indexOf("recv_blocks") == -1) completeFlag = false;
+                                    qDebug() << completeFlag;
+                                }
+                                if (completeFlag == true) {
+                                    (*it)->uniteFile(tr("recv_blocks/"), 8*1024);
+                                }
+                            }
                         }
                     }
                 }
+
+                // if it is a search reply message
                 if (recvMessage.contains("Origin") && recvMessage.contains("SearchReply") && recvMessage.contains("MatchNames") && recvMessage.contains("MatchIDs"))
                 {
-                    // if it is a search reply message
-                    // TODO
                     QVariantList matchNames = recvMessage.value("MatchNames").toList();
                     QVariantList matchIDs = recvMessage.value("MatchIDs").toList();
                     QString origin = recvMessage.value("Origin").toString();
@@ -891,6 +918,7 @@ gotRecvMessage()
                             if ((*it)->contains(matchIDs.at(i).toByteArray())) recvFlag = true;
                         if (recvFlag == false) {
                             // update recv files meta information
+                            // qDebug() << "search reply debug" << matchIDs.at(i).toByteArray();
                             recvFilesMetas.append(new FileMetaData(matchNames.at(i).toString(), matchIDs.at(i).toByteArray(), origin));
                             // update search results list view
                             searchResultsStringList->append(matchNames.at(i).toString());
@@ -938,6 +966,7 @@ gotRecvMessage()
                     isFound = true;
                     matchNames.push_back((*it)->getFileNameOnly());
                     matchIDs.push_back((*it)->getBlockListHash());
+                    // qDebug() << "matchIDs " << matchIDs;
                 }
             }
             // send search reply if files are found
@@ -1025,10 +1054,11 @@ bool PeersterDialog::eventFilter(QObject *obj, QEvent *event)
 void PeersterDialog::
 downloadFile(const QModelIndex& index)
 {
-    // TODO
     FileMetaData *downloadTaget = recvFilesMetas.at(index.row());
+    qDebug() << downloadTaget->getOriginNID();
+    qDebug() << *myOrigin;
+    qDebug() << downloadTaget->getBlockListHash();
     sendBlockRequest(downloadTaget->getOriginNID(), *myOrigin, 10, downloadTaget->getBlockListHash());
-    textview->append("download");
 }
 
 // ---------------------------------------------------------------------
@@ -1258,7 +1288,7 @@ sendSearchRequest(const QString origin, const QString search, const quint32 budg
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
 
-    textview->append("send search");
+    // textview->append("send search");
 
     delete message;
     delete bytearrayToSend;
@@ -1290,7 +1320,7 @@ sendSearchReply(const QString dest, const QString origin, const quint32 hopLimit
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
 
-    textview->append("reply search");
+    // textview->append("reply search");
 
     delete message;
     delete bytearrayToSend;
@@ -1326,14 +1356,32 @@ FileMetaData(const QString fn):
     fileNameWithPath(fn), 
     fileNameOnly(QDir(fileNameWithPath).dirName())
 { 
-    // if tmp_blocks does not exist, create the temp directory
-    if (!QDir(QDir::currentPath() + QObject::tr("/tmp_blocks/")).exists())
-            QDir().mkdir(QDir::currentPath() + QObject::tr("/tmp_blocks/"));
-    // split the file to currentPath/tmp_blocks/
-    splitFile(QDir::currentPath()+QObject::tr("/tmp_blocks/"), 8*1024);
+    // split the file to ./tmp_blocks/
+    splitFile(QObject::tr("tmp_blocks/"), 8*1024);
     // qDebug() << getSubFilesNum();
 }
 
+
+// ---------------------------------------------------------------------
+// combine sub files into a unite one
+void FileMetaData::
+uniteFile(const QString outDir, const int blockSize)
+{
+    QFile unitedFile(outDir + getFileNameOnly());
+    unitedFile.open(QIODevice::WriteOnly);
+    QDataStream unitedFlow(&unitedFile);
+    char buffer[blockSize];
+    int part = 0;
+    while(QFile::exists(outDir + getFileNameOnly() + QObject::tr("_") + QString::number(part))){
+        QFile qfOut(outDir + getFileNameOnly() + QObject::tr("_") + QString::number(part++));
+        qfOut.open(QIODevice::ReadOnly);
+        QDataStream fout(&qfOut);
+        int readSize = fout.readRawData(buffer, blockSize);
+        qfOut.close();
+        unitedFlow.writeRawData(buffer, readSize);
+    }
+    unitedFile.close();
+}
 
 // ---------------------------------------------------------------------
 // split the file into blocks stored in outDir
@@ -1387,8 +1435,9 @@ splitFile(const QString outDir, const int blockSize)
     QFile qfOut(outDir + fileNameOnly + QObject::tr("_meta"));
     metaFileName = outDir + fileNameOnly + QObject::tr("_meta");
     if (qfOut.open(QIODevice::WriteOnly)) {
-        QDataStream fout(&qfOut);
-        fout << blockList;
+        //QDataStream fout(&qfOut);
+        //fout << blockList;
+        qfOut.write(blockList.data(), blockList.size()); // use this because stream would add extra 4 bytes
         qfOut.close();
     }
     // test the file's hash 
@@ -1404,23 +1453,8 @@ splitFile(const QString outDir, const int blockSize)
     blockListHash.append(hashAll);
     // qDebug() << "path:" << getFilePath(hashA.toByteArray());
 
-    // debug: unite file for checking
-    /*
-    QFile unitedFile(outDir + QDir(fileNameWithPath).dirName() + tr("_united"));
-    unitedFile.open(QIODevice::WriteOnly);
-    QDataStream unitedFlow(&unitedFile);
-    part = 0;
-    while(QFile::exists(outDir + QDir(fileNameWithPath).dirName() + tr("_") + QString::number(part))){
-        QFile qfOut(outDir + QDir(fileNameWithPath).dirName() + tr("_") + QString::number(part++));
-        qfOut.open(QIODevice::ReadOnly);
-        QDataStream fout(&qfOut);
-        int readSize = fout.readRawData(buffer, blockSize);
-        qfOut.close();
-        unitedFlow.writeRawData(buffer, readSize);
-    }
-    unitedFile.close();
-    */
 }
+
 
 // ---------------------------------------------------------------------
 // main program entry

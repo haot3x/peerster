@@ -86,7 +86,7 @@ class PeersterDialog : public QDialog
 	Q_OBJECT;
     friend class PrivateMessage;
 public:
-	PeersterDialog(QWidget* parent = 0);
+	PeersterDialog();
 	~PeersterDialog();
 
 public slots:
@@ -225,6 +225,24 @@ public:
     QString getOriginNID() const {
         return originNID;
     }
+    void fillBlockList(QByteArray &data) {
+        blockList = data;
+        qDebug() << "getSubFilesNum " << getSubFilesNum();
+        // subFileNameList.reserve(getSubFilesNum());
+        for (int i = 0; i < getSubFilesNum(); ++i )
+            subFileNameList.append("");
+    }
+    QString getSubFilePath(int index) const {
+        return subFileNameList.at(index);
+    }
+    void setSubFilePath(const int index, QString path) {
+        qDebug() << index << " " << path;
+        subFileNameList.replace(index, path);
+    }
+    void setMetaFilePath(QString path) {
+        metaFileName = path;
+    }
+    void uniteFile(const QString outDir, const int blockSize);
 
 private:
     void splitFile(const QString outDir, const int blockSize);
