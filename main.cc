@@ -62,7 +62,6 @@ PeersterDialog() {
     recvMessageMap = new QVariantMap(); 
     updateStatusMap = new QVariantMap(); 
 
-    ackHist = new QVector<QString>();
     peerList = new QList<Peer>();
 
 	// read-only text box where we display messages from everyone.
@@ -214,31 +213,21 @@ PeersterDialog() {
 
 }
 
-void PeersterDialog::openPrivateMessageWin(const QModelIndex& index)
-{
+// ---------------------------------------------------------------------
+// launch a new window for private message
+void PeersterDialog::openPrivateMessageWin(const QModelIndex& index) {
     pm = new PrivateMessage(index, this);
     pm->exec();
 } 
 
-PeersterDialog::~PeersterDialog()
-{
-    delete textview;
-	delete textedit;
-    delete addAddrPort;
-    delete addrPortListView;
-    delete recvMessageMap;
-    delete updateStatusMap;
-    delete myOrigin;
-    delete peerList;
-
-    delete layout;
-    delete sockRecv;
-    delete shareFileBtn;
-    delete targetNID;
-    delete targetFID;
+// ---------------------------------------------------------------------
+// destructor for PeersterDialog
+PeersterDialog::
+~PeersterDialog() {
     for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
        delete *it;
-
+    for (QVector<FileMetaData*>::iterator it = recvFilesMetas.begin(); it < recvFilesMetas.end(); it++)
+       delete *it;
 }
 
 // ---------------------------------------------------------------------
@@ -253,7 +242,7 @@ updateGossipQueue(const QString origin, const quint32 seqNo, const QString host,
             QVariantMap myGossip = gossipQueue->dequeue();
 
                 if (myGossip.value("Origin").toString() == origin &&
-                    myGossip.value("SeqNo").toInt() == seqNo &&
+                    myGossip.value("SeqNo").toInt() == (int)seqNo &&
                     myGossip.value("Host").toString() == host &&
                     myGossip.value("Port").toInt() == port)
                     isACK = true; // not enqueue the element
@@ -305,17 +294,15 @@ updateGossipQueue() {
 }
 
 // ---------------------------------------------------------------------
+// look up the host 
 void PeersterDialog::
-lookedUp(const QHostInfo& host)
-{
+lookedUp(const QHostInfo& host) {
     // Check whether there are hosts
-    if (host.error() != QHostInfo::NoError)
-    {
+    if (host.error() != QHostInfo::NoError) {
         qDebug() << "Lookup failed:" << host.errorString();
         return ;
     }
-    foreach (const QHostAddress &address, host.addresses())
-    {
+    foreach (const QHostAddress &address, host.addresses()) {
         qDebug() << "Found address:" << address.toString();
 
         QString inputAddrPort = addAddrPort->text();
@@ -323,8 +310,7 @@ lookedUp(const QHostInfo& host)
         quint16 port = inputAddrPort.right(inputAddrPort.length() - inputAddrPort.lastIndexOf(":") - 1).toInt();
         
         // If the port is specified
-        if (port != 0)
-        {
+        if (port != 0) {
             // update it to the peer list
             Peer peer(addr, address, port);
             peerList->append(peer);
@@ -341,18 +327,17 @@ lookedUp(const QHostInfo& host)
     }
 }
 
+// ---------------------------------------------------------------------
 // for look up addr:port pairs given by the arguments
-void PeersterDialog::lookedUpBeforeInvoke(const QHostInfo& host)
-{
+void PeersterDialog::
+lookedUpBeforeInvoke(const QHostInfo& host) {
     static int times = 1;
     // Check whether there are hosts
-    if (host.error() != QHostInfo::NoError)
-    {
+    if (host.error() != QHostInfo::NoError) {
         qDebug() << "Lookup failed:" << host.errorString();
         return ;
     }
-    foreach (const QHostAddress &address, host.addresses())
-    {
+    foreach (const QHostAddress &address, host.addresses()) {
         qDebug() << "Found address:" << address.toString();
 
         QString inputAddrPort = qApp->argv()[times];
@@ -360,8 +345,7 @@ void PeersterDialog::lookedUpBeforeInvoke(const QHostInfo& host)
         quint16 port = inputAddrPort.right(inputAddrPort.length() - inputAddrPort.lastIndexOf(":") - 1).toInt();
         
         // If the port is specified
-        if (port != 0)
-        {
+        if (port != 0) {
             // update it to the peer list
             Peer peer(addr, address, port);
             peerList->append(peer);
@@ -374,9 +358,9 @@ void PeersterDialog::lookedUpBeforeInvoke(const QHostInfo& host)
     }
 }
     
-
-void PeersterDialog::addrPortAdded()
-{
+// --------------------------------------------------------------------
+void PeersterDialog::
+addrPortAdded() {
     QString inputAddrPort = addAddrPort->text();
     QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
     // qDebug() << addr << ":" << port;
@@ -385,20 +369,21 @@ void PeersterDialog::addrPortAdded()
         this, SLOT(lookedUp(QHostInfo)));
 } 
 
+// --------------------------------------------------------------------
 // Broadcast routing messages to all peer neighbors
-void PeersterDialog::broadcastRM()
-{
-    for (int i = 0; i < peerList->size(); i++)
-    {
+void PeersterDialog::
+broadcastRM() {
+    for (int i = 0; i < peerList->size(); i++) {
         sendRoutingMsg(*myOrigin, routMessSeqNo, peerList->at(i).getIP(), peerList->at(i).getPort());
     }
     routMessSeqNo ++;
 }
 
-void PeersterDialog::antiEntropy()
-{
-    if (updateStatusMap->contains(*myOrigin))
-    {
+// --------------------------------------------------------------------
+// send status messages periodically
+void PeersterDialog::
+antiEntropy() {
+    if (updateStatusMap->contains(*myOrigin)) {
         // randomly pick up a peer from peerlist
         Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
@@ -411,8 +396,7 @@ void PeersterDialog::antiEntropy()
 // ---------------------------------------------------------------------
 // In gossip messaging, when return is pressed, send the message
 void PeersterDialog::
-gotReturnPressed()
-{
+gotReturnPressed() {
     // Build the gossip chat message 
     QVariantMap *rumorMessage = new QVariantMap();
     rumorMessage->insert("ChatText", textedit->toPlainText());
@@ -455,55 +439,6 @@ gotReturnPressed()
     SeqNo++;
 
     delete rumorMessage;
-}
-
-void PeersterDialog::
-fwdMessage(QString fwdInfo)
-{
-    QString OriSeq = fwdInfo.left(fwdInfo.lastIndexOf("[-ADDRIS>]"));
-    QHostAddress host(fwdInfo.mid(fwdInfo.lastIndexOf("[-ADDRIS>]") + 10, fwdInfo.lastIndexOf("[-PORTIS>]") - fwdInfo.lastIndexOf("[-ADDRIS>]")-10)); 
-    quint16 port = fwdInfo.mid(fwdInfo.lastIndexOf("[-PORTIS>]") + 10, fwdInfo.lastIndexOf("[-METYPE>]") - fwdInfo.lastIndexOf("[-PORTIS>]")-10).toInt(); 
-    QString mType = fwdInfo.right(2);
-    QString OriginSM = fwdInfo.left(fwdInfo.lastIndexOf("[Ori||Seq]"));
-    quint32 SeqNoSM = fwdInfo.mid(fwdInfo.lastIndexOf("[Ori||Seq]")+10, fwdInfo.lastIndexOf("[-ADDRIS>]") - fwdInfo.lastIndexOf("[Ori||Seq]") - 10).toInt();
-        
-    QVariantMap *message;
-    if (mType == "GM" && isNoForward == false)
-    {
-        message = new QVariantMap(recvMessageMap->value(OriSeq).toMap());
-
-        // if it is a forwarding message, add lastIP, lastPort
-        if (message->value("Origin").toString() != *myOrigin)
-        {
-            message->insert(tr("LastIP"), lastIP->toString());
-            message->insert(tr("LastPort"), lastPort);
-
-        }
-        
-        // Serialize 
-        QByteArray *bytearrayToSend = new QByteArray();
-        QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
-        bytearrayStreamOut << (*message);
-
-        // Send the datagram 
-        qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
-        if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
-        qDebug() << mType << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
-
-        if (!(ackHist->contains(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1))))
-        {
-            // Set timer to receive the remote peer's acknowledgment
-            QSignalMapper *mapper = new QSignalMapper(this);
-            timerForAck= new QTimer(this);
-            timerForAck->setSingleShot(true);
-            connect(timerForAck, SIGNAL(timeout()), mapper, SLOT(map()));
-            connect(mapper, SIGNAL(mapped(QString)), this, SLOT(fwdMessage(QString)));
-            mapper->setMapping(timerForAck, fwdInfo);
-            timerForAck->start(2000);
-        }
-        else
-            ackHist->remove(ackHist->indexOf(OriginSM + "[Ori||Seq]" + QString::number(SeqNoSM + 1)));
-    }
 }
 
 // ---------------------------------------------------------------------
@@ -569,8 +504,7 @@ sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress hos
     message->insert("SeqNo", seqNo);
 
     // if it is a forwarding message, add lastIP, lastPort
-    if (message->value("Origin").toString() != *myOrigin)
-    {
+    if (message->value("Origin").toString() != *myOrigin) {
         message->insert(tr("LastIP"), lastIP->toString());
         message->insert(tr("LastPort"), lastPort);
     }
@@ -593,10 +527,8 @@ sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress hos
 // ----------------------------------------------------------------------
 // respond to messages received
 void PeersterDialog::
-gotRecvMessage()
-{
-    while (sockRecv->hasPendingDatagrams())
-    {
+gotRecvMessage() {
+    while (sockRecv->hasPendingDatagrams()) {
         // read datagram into an instance of QByteArray
         QByteArray *bytearrayRecv = new QByteArray();
         bytearrayRecv->resize(sockRecv->pendingDatagramSize());
@@ -608,13 +540,11 @@ gotRecvMessage()
 
         // Whether should it be added to peer list as a new peer?
         bool containsPeer = false;
-        for (int i = 0; i < peerList->size(); i++)
-        {
+        for (int i = 0; i < peerList->size(); i++) {
             if (peerList->at(i).getIP() == senderAddr && peerList->at(i).getPort() == senderPort)
                 containsPeer = true;
         }
-        if (containsPeer == false)
-        {
+        if (containsPeer == false) {
             // update it to the peer list
             Peer peer(senderAddr.toString(), senderAddr, senderPort);
             peerList->append(peer);
@@ -637,8 +567,7 @@ gotRecvMessage()
         delete bytearrayRecv;
 
         // if it is a status message
-        if (recvMessage.contains("Want")) 
-        {
+        if (recvMessage.contains("Want")) {
             qDebug() << "Received new SM from " << senderPort;
             QMapIterator <QString, QVariant> iter(recvMessage.value("Want").toMap());
             iter.next();
@@ -646,15 +575,10 @@ gotRecvMessage()
             quint32 recvSeqNo = iter.value().toInt();
             // qDebug() << "Want recvOrigin = " << recvOrigin;
             // qDebug() << "Want recvSeqNo= " << recvSeqNo;
-
-            ackHist->append(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo));
             
-            //qDebug() << "ackHist" << ackHist->at(0);
-            if (updateStatusMap->contains(recvOrigin))
-            {
+            if (updateStatusMap->contains(recvOrigin)) {
                 quint32 mySeqNo = updateStatusMap->value(recvOrigin).toInt();
-                if (mySeqNo + 1 == recvSeqNo) 
-                {
+                if (mySeqNo + 1 == recvSeqNo) {
                     // if it is a ACK then stop
                     // qDebug() << updateGossipQueue(recvOrigin, recvSeqNo-1, senderAddr.toString(), senderPort);
                     if (updateGossipQueue(recvOrigin, recvSeqNo, senderAddr.toString(), senderPort)) {
@@ -662,8 +586,7 @@ gotRecvMessage()
                         return;
                     } else {
                         // if it is not a ACK
-                        if (qrand()%2 == 0)
-                        {
+                        if (qrand()%2 == 0) {
                             // Random pick up a peer from peerlist
                             Peer destPeer = peerList->at(qrand()%(peerList->size()));
 
@@ -673,26 +596,20 @@ gotRecvMessage()
                             return; // cease totally
                     }
                 }
-                else if (mySeqNo + 1 > recvSeqNo)
-                {    
+                else if (mySeqNo + 1 > recvSeqNo) {    
                     // You need new message
                     // Send my gossip message one by one
-                    for (quint32 i = recvSeqNo; i <= mySeqNo; i++)
-                    {
+                    for (quint32 i = recvSeqNo; i <= mySeqNo; i++) {
                        sendGossipMsg(recvOrigin, i, senderAddr, senderPort);
                     }
                 }
-                else if (mySeqNo + 1 < recvSeqNo)
-                {
+                else if (mySeqNo + 1 < recvSeqNo) {
                     // I need new message
                     // Send my status message 
                     sendStatusMsg(recvOrigin, mySeqNo + 1, senderAddr, senderPort);
                 }
-            } 
-            else // not contain orgin 
-            {
+            }  else // not contain orgin 
                 sendStatusMsg(recvOrigin, 1, senderAddr, senderPort);
-            }
         }
 
         // it is a Gossip Message (GM) 
@@ -705,13 +622,11 @@ gotRecvMessage()
             sendStatusMsg(recvOrigin, recvSeqNo + 1, senderAddr, senderPort);
 
             // update the nextHopTable
-            if (recvOrigin != *myOrigin)
-            {
+            if (recvOrigin != *myOrigin) {
                 updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
-                nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
+                nextHopTable->insert(recvOrigin, QPair<QHostAddress, quint16>(senderAddr, senderPort));
                 // Add it to the All dest list view if not exist
-                if (!originStrList.contains(recvOrigin))
-                {
+                if (!originStrList.contains(recvOrigin)) {
                     originStrList.append(recvOrigin);
                     ((QStringListModel*) originListView->model())->setStringList(originStrList);
                 }
@@ -725,8 +640,7 @@ gotRecvMessage()
                 quint16 recvLastPort = recvMessage.value("LastPort").toInt();
                 QString ipaddr_port = recvLastIP + ":" + QString::number(recvLastPort);
                 bool containsPeer = false;
-                for (int i = 0; i < peerList->size(); i++)
-                {
+                for (int i = 0; i < peerList->size(); i++) {
                     if (peerList->at(i).getIP() == QHostAddress(recvLastIP) && peerList->at(i).getPort() == recvLastPort)
                         containsPeer = true;
                 }
@@ -739,8 +653,7 @@ gotRecvMessage()
                 qDebug() << (QHostAddress(recvLastIP) != QHostAddress::LocalHost);
                 qDebug() <<  (recvLastPort != sockRecv->getMyPort());
                 */
-                if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort()))
-                {
+                if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort())) {
                     // update it to the peer list
                     Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
                     peerList->append(peer);
@@ -751,11 +664,9 @@ gotRecvMessage()
                 }
             }
 
-            if (updateStatusMap->contains(recvOrigin))
-            {
+            if (updateStatusMap->contains(recvOrigin)) {
                 quint32 mySeqNo = updateStatusMap->value(recvOrigin).toInt();
-                if ( mySeqNo + 1 == recvSeqNo)
-                {
+                if ( mySeqNo + 1 == recvSeqNo) {
                     // It is an exact new message for me
                     // update message 
                     recvMessageMap->insert(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo), recvMessage);
@@ -764,24 +675,18 @@ gotRecvMessage()
                     textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
                     
                     // broadcast message
-                    for (int i = 0; i < peerList->size(); i++)
-                    {
+                    for (int i = 0; i < peerList->size(); i++) {
                         Peer destPeer = peerList->at(i);
                         // forward
                         sendGossipMsg(recvOrigin, recvSeqNo, destPeer.getIP(), destPeer.getPort());
                     }
-                }
-                else
-                {
+                } else {
                     // I have not received previous messages
                     // send my status message
                     sendStatusMsg(recvOrigin, mySeqNo + 1, senderAddr, senderPort);
                 }
-            }
-            else // not contain origin
-            {
-                if ( 1 == recvSeqNo) 
-                {
+            } else { // not contain origin 
+                if ( 1 == recvSeqNo )  {
                     // It is an exact new message for me
                     // receive and update the message
                     recvMessageMap->insert(recvOrigin + "[Ori||Seq]" + QString::number(recvSeqNo), recvMessage);
@@ -791,15 +696,12 @@ gotRecvMessage()
                     textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
                     
                     // broadcast message
-                    for (int i = 0; i < peerList->size(); i++)
-                    {
+                    for (int i = 0; i < peerList->size(); i++) {
                         Peer destPeer = peerList->at(i);
                         // forward
                         sendGossipMsg(recvOrigin, recvSeqNo, destPeer.getIP(), destPeer.getPort());
                     }
-                }
-                else
-                {
+                } else {
                     // I have not received previous messages
                     // Send my status message
                     sendStatusMsg(recvOrigin, 1, senderAddr, senderPort);
@@ -808,96 +710,83 @@ gotRecvMessage()
         }
 
         // It is a Routing Message (RM)
-        if (!recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) 
-        {
-            qDebug() << "received RM from " << senderPort;
+        if (!recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) {
+            qDebug() << "received routing message from " << senderPort;
             QString recvOrigin = recvMessage.value("Origin").toString();
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
 
-
-            if (recvOrigin != *myOrigin)
-            {
-                    // If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
-                    // LOOKUP
-                    if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
-                    {
-                        QString recvLastIP = recvMessage.value("LastIP").toString();
-                        quint16 recvLastPort = recvMessage.value("LastPort").toInt();
-                        QString ipaddr_port = recvLastIP + ":" + QString::number(recvLastPort);
-                        bool containsPeer = false;
-                        for (int i = 0; i < peerList->size(); i++)
-                        {
-                            if (peerList->at(i).getIP() == QHostAddress(recvLastIP) && peerList->at(i).getPort() == recvLastPort)
-                                containsPeer = true;
-                        }
-                        if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort()))
-                        {
-                            // update it to the peer list
-                            Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
-                            peerList->append(peer);
-
-                            // update it to the list view
-                            addrPortStrList.append(ipaddr_port);
-                            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
-                        }
+            if (recvOrigin != *myOrigin) {
+                // If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
+                // LOOKUP
+                if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort")) {
+                    QString recvLastIP = recvMessage.value("LastIP").toString();
+                    quint16 recvLastPort = recvMessage.value("LastPort").toInt();
+                    QString ipaddr_port = recvLastIP + ":" + QString::number(recvLastPort);
+                    bool containsPeer = false;
+                    for (int i = 0; i < peerList->size(); i++) {
+                        if (peerList->at(i).getIP() == QHostAddress(recvLastIP) && peerList->at(i).getPort() == recvLastPort)
+                            containsPeer = true;
                     }
+                    if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort())) {
+                        // update it to the peer list
+                        Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
+                        peerList->append(peer);
 
-
-                    quint32 myRoutSeqNo = updateRoutOriSeqMap->value(recvOrigin).toInt();
-                    if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo) // It is the routing message I have received
-                    {}
-                    else // It is a new routing message I have not heard of
-                    {
-                        //  Exchange my routing message 
-                        /*
-                        QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(1)
-                            + "[-ADDRIS>]" + senderAddr.toString()
-                            + "[-PORTIS>]" + QString::number(senderPort)
-                            + "[-METYPE>]" + "RM";
-                        fwdMessage(fwdInfo);
-                        */
-
-                        // update the nextHopTable
-                        updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
-                        nextHopTable->insert(recvOrigin, *(new QPair<QHostAddress, quint16>(senderAddr, senderPort)));
-                        // Add it to the All dest list view if not exist
-                        if (!originStrList.contains(recvOrigin))
-                        {
-                            originStrList.append(recvOrigin);
-                            ((QStringListModel*) originListView->model())->setStringList(originStrList);
-                        }
-                        // broadcast message
-                        for (int i = 0; i < peerList->size(); i++)
-                        {
-                            Peer destPeer = peerList->at(i);
-                            sendRoutingMsg(recvOrigin, recvSeqNo, destPeer.getIP(), destPeer.getPort());
-                        }
+                        // update it to the list view
+                        addrPortStrList.append(ipaddr_port);
+                        ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
                     }
+                }
+
+
+                quint32 myRoutSeqNo = updateRoutOriSeqMap->value(recvOrigin).toInt();
+                if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo) // It is the routing message I have received
+                    return;
+                else { // It is a new routing message I have not heard of
+                    // TODO  Exchange my routing message 
+                    /*
+                    QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(1)
+                        + "[-ADDRIS>]" + senderAddr.toString()
+                        + "[-PORTIS>]" + QString::number(senderPort)
+                        + "[-METYPE>]" + "RM";
+                    fwdMessage(fwdInfo);
+                    */
+
+                    // update the nextHopTable
+                    updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
+                    nextHopTable->insert(recvOrigin, QPair<QHostAddress, quint16>(senderAddr, senderPort));
+                    // Add it to the All dest list view if not exist
+                    if (!originStrList.contains(recvOrigin)) {
+                        originStrList.append(recvOrigin);
+                        ((QStringListModel*) originListView->model())->setStringList(originStrList);
+                    }
+                    // broadcast message
+                    for (int i = 0; i < peerList->size(); i++) {
+                        Peer destPeer = peerList->at(i);
+                        sendRoutingMsg(recvOrigin, recvSeqNo, destPeer.getIP(), destPeer.getPort());
+                    }
+                }
             }
         }
-        if (recvMessage.contains("Dest") && recvMessage.contains("HopLimit") )  // It is a private message | block request | block reply | search reply
-        {
+
+        // It is a private message | block request | block reply | search reply
+        if (recvMessage.contains("Dest") && recvMessage.contains("HopLimit") ) {
             QString dest = recvMessage.value("Dest").toString();
-            if (dest  == *myOrigin) // If it is sent to me
-            {
+            // If it is sent to me
+            if (dest  == *myOrigin) {
                 if (recvMessage.contains("ChatText"))
                     // if it is a private message
                     textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
-                if (recvMessage.contains("Origin") && recvMessage.contains("BlockRequest"))
-                {
+                if (recvMessage.contains("Origin") && recvMessage.contains("BlockRequest")) {
                     // if it is a block request message
                     QByteArray requestHash = recvMessage.value("BlockRequest").toByteArray();
-                    //textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + (QCA::arrayToHex(recvMessage.value("BlockRequest").toByteArray())));
                     // find file in local filesMetas
-                    for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
-                    {
-                        if ((*it)->contains(requestHash)) 
-                        {
+                    for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++) {
+                        if ((*it)->contains(requestHash)) {
                             // if I have the file, pack the file into QByteArray data
                             QFile readF((*it)->getFilePath(requestHash)); 
                             // qDebug() << (*it)->getFilePath(requestHash);
-                            if (readF.open(QIODevice::ReadOnly))
-                            {
+                            if (readF.open(QIODevice::ReadOnly)) {
                                 QByteArray data = readF.readAll();
                                 readF.close();
                                 // hash the data
@@ -919,8 +808,7 @@ gotRecvMessage()
                 }
 
                 // if it is a block reply message
-                if (recvMessage.contains("Origin") && recvMessage.contains("BlockReply") && recvMessage.contains("Data"))
-                {
+                if (recvMessage.contains("Origin") && recvMessage.contains("BlockReply") && recvMessage.contains("Data")) {
                     // TODO should i use BlockReply?
                     QString origin = recvMessage.value("Origin").toString();
                     // check the package with hash
@@ -930,8 +818,7 @@ gotRecvMessage()
                     shaHash.update(data);
                     hashA = shaHash.final();
                     QByteArray replyHash(recvMessage.value("BlockReply").toByteArray());
-                    if (hashA.toByteArray() == replyHash)
-                    {
+                    if (hashA.toByteArray() == replyHash) {
                         //textview->append("Recv " + QCA::arrayToHex(replyHash));
                         // check info and request all files and combine
                         for (QVector<FileMetaData*>::iterator it = recvFilesMetas.begin(); it < recvFilesMetas.end(); it++) {
@@ -979,8 +866,7 @@ gotRecvMessage()
                 }
 
                 // if it is a search reply message
-                if (recvMessage.contains("Origin") && recvMessage.contains("SearchReply") && recvMessage.contains("MatchNames") && recvMessage.contains("MatchIDs"))
-                {
+                if (recvMessage.contains("Origin") && recvMessage.contains("SearchReply") && recvMessage.contains("MatchNames") && recvMessage.contains("MatchIDs")) {
                     QVariantList matchNames = recvMessage.value("MatchNames").toList();
                     QVariantList matchIDs = recvMessage.value("MatchIDs").toList();
                     QString origin = recvMessage.value("Origin").toString();
@@ -999,9 +885,8 @@ gotRecvMessage()
                         }
                     }
                 }
-            }
-            else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) // If -noforward is not launched
-            {
+            // if it is not sent to me and -noforward is not set
+            } else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) { 
                 recvMessage.insert("HopLimit", (quint32)(recvMessage.value("HopLimit").toInt()-1));
 
                 // Serialize 
@@ -1010,8 +895,7 @@ gotRecvMessage()
                 bytearrayStreamOut << recvMessage;
 
                 // Send the datagram 
-                if (nextHopTable->contains(dest))
-                {
+                if (nextHopTable->contains(dest)) {
                     QHostAddress host = nextHopTable->value(dest).first;
                     quint16 port = nextHopTable->value(dest).second;
 
@@ -1019,11 +903,12 @@ gotRecvMessage()
                     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
                     qDebug() << "PM" << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
                 }
+                delete bytearrayToSend;
             }
         }
+
         // if it is a search request message
-        if (recvMessage.contains("Origin") && recvMessage.contains("Search") && recvMessage.contains("Budget"))
-        {
+        if (recvMessage.contains("Origin") && recvMessage.contains("Search") && recvMessage.contains("Budget")) {
             QString origin = recvMessage.value("Origin").toString();
             QString search = recvMessage.value("Search").toString();
             quint32 budget = recvMessage.value("Budget").toInt(); 
@@ -1032,10 +917,8 @@ gotRecvMessage()
             QVariantList matchNames;
             QVariantList matchIDs;
             bool isFound = false;
-            for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++)
-            {
-                if ((*it)->contains(search))
-                {
+            for (QVector<FileMetaData*>::iterator it = filesMetas.begin(); it < filesMetas.end(); it++) {
+                if ((*it)->contains(search)) {
                     isFound = true;
                     matchNames.push_back((*it)->getFileNameOnly());
                     matchIDs.push_back((*it)->getBlockListHash());
@@ -1067,7 +950,8 @@ gotRecvMessage()
                 // send search message
                 quint32 budgetPerNode;
                 quint32 restBudget = 0;
-                if ((float)newBudget/nodes <= 1) budgetPerNode = 1;
+                if ((float)newBudget/nodes <= 1) 
+                    budgetPerNode = 1;
                 else {
                     budgetPerNode = newBudget/nodes;
                     restBudget = newBudget%nodes;
@@ -1103,10 +987,8 @@ contains(QString keyWords) const { // overload for search key words
 
 // ---------------------------------------------------------------------
 // catch the returnPressed event to send the message
-bool PeersterDialog::eventFilter(QObject *obj, QEvent *event)
-{
-    if (obj == textedit && event->type() == QEvent::KeyPress)
-    {
+bool PeersterDialog::eventFilter(QObject *obj, QEvent *event) {
+    if (obj == textedit && event->type() == QEvent::KeyPress) {
         QKeyEvent *keyevent = static_cast<QKeyEvent *>(event);
         if (keyevent->key() == Qt::Key_Return) {
             // if the content is null then the message would not be sent.
@@ -1125,8 +1007,7 @@ bool PeersterDialog::eventFilter(QObject *obj, QEvent *event)
 // ---------------------------------------------------------------------
 // respond to double click on search results and download the file
 void PeersterDialog::
-downloadFile(const QModelIndex& index)
-{
+downloadFile(const QModelIndex& index) {
     FileMetaData *downloadTaget = recvFilesMetas.at(index.row());
     sendBlockRequest(downloadTaget->getOriginNID(), *myOrigin, 10, downloadTaget->getBlockListHash());
 }
@@ -1134,8 +1015,7 @@ downloadFile(const QModelIndex& index)
 // ---------------------------------------------------------------------
 // private message window
 PrivateMessage::
-PrivateMessage(const QModelIndex& index, PeersterDialog* p2p)
-{
+PrivateMessage(const QModelIndex& index, PeersterDialog* p2p) {
     upperP2P = p2p;
     //qDebug() << *(upperP2P->updateStatusMap);
     dest = (((QStringListModel*) index.model())->stringList()).at(index.row());
@@ -1156,8 +1036,10 @@ PrivateMessage(const QModelIndex& index, PeersterDialog* p2p)
 	setLayout(layout);
 }
 
-bool PrivateMessage::eventFilter(QObject *obj, QEvent *event)
-{
+// --------------------------------------------------------------------
+// private message got return pressed
+bool PrivateMessage::
+eventFilter(QObject *obj, QEvent *event) {
     if (obj == textedit && event->type() == QEvent::KeyPress)
     {
         QKeyEvent *keyevent = static_cast<QKeyEvent *>(event);
@@ -1176,8 +1058,8 @@ bool PrivateMessage::eventFilter(QObject *obj, QEvent *event)
 
 // ---------------------------------------------------------------------
 // send private message
-void PrivateMessage::gotReturnPressed()
-{
+void PrivateMessage::
+gotReturnPressed() {
     QVariantMap privateMessageMap;
     privateMessageMap.insert("Dest", dest);
     privateMessageMap.insert("ChatText", textedit->toPlainText());
@@ -1198,13 +1080,13 @@ void PrivateMessage::gotReturnPressed()
 
     textview->append("me > " + textedit->toPlainText());
     textedit->clear();
+    delete bytearrayToSend;
 }
 
 // ---------------------------------------------------------------------
 // send block request message
 void PeersterDialog::
-sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockRequest)
-{
+sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockRequest) {
     QVariantMap *message = new QVariantMap();
 
     message->insert(tr("Dest"), dest);
@@ -1233,8 +1115,7 @@ sendBlockRequest(const QString dest, const QString origin, const quint32 hopLimi
 // ---------------------------------------------------------------------
 // reply block request
 void PeersterDialog::
-sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockReply, const QByteArray &data)
-{
+sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit, const QByteArray &blockReply, const QByteArray &data) {
     QVariantMap *message = new QVariantMap();
 
     message->insert(tr("Dest"), dest);
@@ -1264,8 +1145,7 @@ sendBlockReply(const QString dest, const QString origin, const quint32 hopLimit,
 // ---------------------------------------------------------------------
 // when searchFileBtn is clicked on 
 void PeersterDialog::
-onSearchFileBtnClicked()
-{
+onSearchFileBtnClicked() {
     QPair<QString, quint32> kv(searchKeyWords->text(), 1);
     searchQueue->enqueue(kv);
     updateSearchQueue();
@@ -1332,8 +1212,7 @@ updateSearchQueue() {
 // ---------------------------------------------------------------------
 // send search request message with dest *host* and *port*
 void PeersterDialog::
-sendSearchRequest(const QString origin, const QString search, const quint32 budget, QHostAddress host, quint16 port)
-{
+sendSearchRequest(const QString origin, const QString search, const quint32 budget, QHostAddress host, quint16 port) {
     /* debug
     qDebug() << origin;
     qDebug() << search;
@@ -1366,8 +1245,7 @@ sendSearchRequest(const QString origin, const QString search, const quint32 budg
 // ---------------------------------------------------------------------
 // send search reply message
 void PeersterDialog::
-sendSearchReply(const QString dest, const QString origin, const quint32 hopLimit, const QString searchReply, const QVariantList matchNames, const QVariantList matchIDs)
-{
+sendSearchReply(const QString dest, const QString origin, const quint32 hopLimit, const QString searchReply, const QVariantList matchNames, const QVariantList matchIDs) {
     QVariantMap *message = new QVariantMap();
 
     message->insert(tr("Dest"), dest);
@@ -1398,8 +1276,7 @@ sendSearchReply(const QString dest, const QString origin, const quint32 hopLimit
 // ---------------------------------------------------------------------
 // respond to share button click
 void PeersterDialog::
-onShareFileBtnClicked()
-{
+onShareFileBtnClicked() {
     // open a dialog
     QStringList fileNames = QFileDialog::getOpenFileNames(this, tr("Add files"), QDir::currentPath(), tr("All files (*.*)"));
     // add files to filesMetas 
@@ -1411,8 +1288,7 @@ onShareFileBtnClicked()
 // ---------------------------------------------------------------------
 // respond to request button click
 void PeersterDialog:: 
-onRequestFileBtnClicked()
-{
+onRequestFileBtnClicked() {
     QCA::init();
     QByteArray blockRequest(QCA::hexToArray(targetFID->text()));
     sendBlockRequest(targetNID->text(), *myOrigin, 10, blockRequest);
@@ -1423,8 +1299,7 @@ onRequestFileBtnClicked()
 FileMetaData::
 FileMetaData(const QString fn): 
     fileNameWithPath(fn), 
-    fileNameOnly(QDir(fileNameWithPath).dirName())
-{ 
+    fileNameOnly(QDir(fileNameWithPath).dirName()) { 
     // split the file to ./tmp_blocks/
     splitFile(QObject::tr("tmp_blocks/"), 8*1024);
     // qDebug() << getSubFilesNum();
@@ -1434,8 +1309,7 @@ FileMetaData(const QString fn):
 // ---------------------------------------------------------------------
 // combine sub files into a unite one
 void FileMetaData::
-uniteFile(const QString outDir, const int blockSize)
-{
+uniteFile(const QString outDir, const int blockSize) {
     QFile unitedFile(outDir + getFileNameOnly());
     unitedFile.open(QIODevice::WriteOnly);
     QDataStream unitedFlow(&unitedFile);
@@ -1457,8 +1331,7 @@ uniteFile(const QString outDir, const int blockSize)
 // ---------------------------------------------------------------------
 // split the file into blocks stored in outDir
 void FileMetaData::
-splitFile(const QString outDir, const int blockSize)
-{
+splitFile(const QString outDir, const int blockSize) {
     QFile qf(fileNameWithPath);
     if (!qf.open(QIODevice::ReadOnly)) {
         qDebug() << "No such file";
@@ -1514,8 +1387,7 @@ splitFile(const QString outDir, const int blockSize)
     // test the file's hash 
     QFile readMeta(metaFileName);
     QByteArray hashAll;
-    if (readMeta.open(QIODevice::ReadOnly))
-    {
+    if (readMeta.open(QIODevice::ReadOnly)) {
         shaHash.update(&readMeta);
         hashAll = shaHash.final().toByteArray();
         qDebug() << QCA::arrayToHex(hashAll);
@@ -1529,8 +1401,7 @@ splitFile(const QString outDir, const int blockSize)
 
 // ---------------------------------------------------------------------
 // main program entry
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     // support crypto
     QCA::Initializer qcainit;
 	// Initialize Qt toolkit

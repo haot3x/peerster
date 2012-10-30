@@ -92,9 +92,6 @@ public:
 public slots:
     void gotRecvMessage();
 
-    // deprecated
-    void fwdMessage(QString fwdInfo);
-
     // gossip messaging
 	void gotReturnPressed();
     void sendStatusMsg(const QString origin, const quint32 seqNo, const QHostAddress host, const quint16 port);
@@ -178,8 +175,6 @@ private:
     QTimer *timerForRM;
     QTimer *timerForAntiEntropy;
 
-    // Used to record the ack to stop resending
-    QVector<QString> *ackHist; // Acknowledgement, namely Status Message, History
     QStringList addrPortStrList;
 
     // store direct neighbors
