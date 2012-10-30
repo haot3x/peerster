@@ -664,6 +664,7 @@ gotRecvMessage() {
                 }
             }
 
+            // if I have contacted this NID
             if (updateStatusMap->contains(recvOrigin)) {
                 quint32 mySeqNo = updateStatusMap->value(recvOrigin).toInt();
                 if ( mySeqNo + 1 == recvSeqNo) {
@@ -677,7 +678,6 @@ gotRecvMessage() {
                     // broadcast message
                     for (int i = 0; i < peerList->size(); i++) {
                         Peer destPeer = peerList->at(i);
-                        // forward
                         sendGossipMsg(recvOrigin, recvSeqNo, destPeer.getIP(), destPeer.getPort());
                     }
                 } else {
@@ -685,6 +685,7 @@ gotRecvMessage() {
                     // send my status message
                     sendStatusMsg(recvOrigin, mySeqNo + 1, senderAddr, senderPort);
                 }
+            // if I have not contacted this NID
             } else { // not contain origin 
                 if ( 1 == recvSeqNo )  {
                     // It is an exact new message for me
@@ -705,6 +706,7 @@ gotRecvMessage() {
                     // I have not received previous messages
                     // Send my status message
                     sendStatusMsg(recvOrigin, 1, senderAddr, senderPort);
+                    textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
                 }
             }
         }
