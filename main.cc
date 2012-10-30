@@ -463,7 +463,7 @@ sendGossipMsg(const QString origin, const quint32 seqNo, const QHostAddress host
         // Send the datagram 
         qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
         if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
-        qDebug() << "send gossip message";
+        //qDebug() << "send gossip message";
 
         delete message;
         delete bytearrayToSend;
@@ -488,7 +488,7 @@ sendStatusMsg(const QString origin, const quint32 seqNo, const QHostAddress host
         // Send the datagram 
         qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
         if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
-        qDebug() << "send status message";
+        // qDebug() << "send status message";
 
         delete message;
         delete bytearrayToSend;
@@ -568,7 +568,7 @@ gotRecvMessage() {
 
         // if it is a status message
         if (recvMessage.contains("Want")) {
-            qDebug() << "Received new SM from " << senderPort;
+            // qDebug() << "Received new SM from " << senderPort;
             QMapIterator <QString, QVariant> iter(recvMessage.value("Want").toMap());
             iter.next();
             QString recvOrigin = iter.key();
@@ -614,7 +614,7 @@ gotRecvMessage() {
 
         // it is a Gossip Message (GM) 
         if (recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) {
-            qDebug() << "received new GM from " << senderPort;
+            // qDebug() << "received new GM from " << senderPort;
             QString recvOrigin = recvMessage.value("Origin").toString();
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
 
