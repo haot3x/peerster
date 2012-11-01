@@ -320,7 +320,7 @@ lookedUp(const QHostInfo& host) {
                 peerList->append(peer);
 
                 // update it to the list view
-                qDebug() << "FFFFFFFFFFFFFFFFFFFFFFFFFFFF";
+                // qDebug() << "FFFFFFFFFFFFFFFFFFFFFFFFFFFF";
                 addrPortStrList.append(address.toString() + ":" + QString::number(port));
                 ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
                 
