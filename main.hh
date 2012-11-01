@@ -165,7 +165,7 @@ private:
     // QVariantMap 
     //    < QString "Origin", QString origin    >
     //    < QString "SeqNo" , quint32 seqNo     >
-    //    < QString "Host"  , QString host >
+    //    < QString "Host"  , QString host      >
     //    < QString "Port"  , quint16 port      >
     //    < QString "Budget", int budget        >
     QQueue<QVariantMap> *gossipQueue;
@@ -184,8 +184,10 @@ private:
     QListView *originListView;
     QStringList originStrList;
 
-
-
+    // store the new IP and port temp waiting for looking for update 
+    // if they exist, they will be added to the direct neighbors list view
+    QString newIP;
+    quint16 newPort;
 
     // point to point messaging -----------------------------------------
     bool isNoForward;

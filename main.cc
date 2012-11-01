@@ -299,36 +299,41 @@ void PeersterDialog::
 lookedUp(const QHostInfo& host) {
     // Check whether there are hosts
     if (host.error() != QHostInfo::NoError) {
-        qDebug() << "Lookup failed:" << host.errorString();
+        // qDebug() << "Lookup failed:" << host.errorString();
         return ;
-    }
+    } 
     foreach (const QHostAddress &address, host.addresses()) {
         qDebug() << "Found address:" << address.toString();
 
-        QString inputAddrPort = addAddrPort->text();
-        QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
-        quint16 port = inputAddrPort.right(inputAddrPort.length() - inputAddrPort.lastIndexOf(":") - 1).toInt();
+        // QString inputAddrPort = addAddrPort->text();
+        // QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+
+        QString inputAddrPort = address.toString() + tr(":") + QString::number(newPort);
+        QString addr = address.toString(); 
+        quint16 port = newPort;
         
         // If the port is specified
         if (port != 0) {
-            // update it to the peer list
-            Peer peer(addr, address, port);
-            peerList->append(peer);
+            if (!addrPortStrList.contains(inputAddrPort)) {
+                // update it to the peer list
+                Peer peer(addr, address, port);
+                peerList->append(peer);
 
-            // update it to the list view
-            addrPortStrList.append(address.toString() + ":" + QString::number(port));
-            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
-            
-            // broadcast when there are new neighbors
-            broadcastRM();
-
-            addAddrPort->clear();
+                // update it to the list view
+                qDebug() << "FFFFFFFFFFFFFFFFFFFFFFFFFFFF";
+                addrPortStrList.append(address.toString() + ":" + QString::number(port));
+                ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+                
+                // broadcast when there are new neighbors
+                broadcastRM();
+            }
         }
     }
 }
 
 // ---------------------------------------------------------------------
 // for look up addr:port pairs given by the arguments
+// before running the program
 void PeersterDialog::
 lookedUpBeforeInvoke(const QHostInfo& host) {
     static int times = 1;
@@ -359,14 +364,18 @@ lookedUpBeforeInvoke(const QHostInfo& host) {
 }
     
 // --------------------------------------------------------------------
+// it is called when input IP:port in the line edit
 void PeersterDialog::
 addrPortAdded() {
     QString inputAddrPort = addAddrPort->text();
-    QString addr = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+    newIP = inputAddrPort.left(inputAddrPort.lastIndexOf(":"));
+    newPort = inputAddrPort.right(inputAddrPort.length() - inputAddrPort.lastIndexOf(":") - 1).toInt();
     // qDebug() << addr << ":" << port;
     
-    QHostInfo::lookupHost(addr, 
+    QHostInfo::lookupHost(newIP, 
         this, SLOT(lookedUp(QHostInfo)));
+
+    addAddrPort->clear();
 } 
 
 // --------------------------------------------------------------------
@@ -517,7 +526,7 @@ sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress hos
     // Send the datagram 
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
-    qDebug() <<"send routing message";
+    //qDebug() <<"send routing message";
 
     delete message;
     delete bytearrayToSend;
@@ -536,15 +545,23 @@ gotRecvMessage() {
         quint16 senderPort;
         qint64 int64Status = sockRecv->readDatagram(bytearrayRecv->data(), bytearrayRecv->size(), 
             &senderAddr, &senderPort);
-        if (int64Status == -1) exit(1); 
+        // if (int64Status == -1) exit(1); 
 
         // Whether should it be added to peer list as a new peer?
         bool containsPeer = false;
         for (int i = 0; i < peerList->size(); i++) {
-            if (peerList->at(i).getIP() == senderAddr && peerList->at(i).getPort() == senderPort)
+            if (peerList->at(i).getIP() == senderAddr && peerList->at(i).getPort() == senderPort) {
                 containsPeer = true;
+            }
         }
         if (containsPeer == false) {
+            // update it to the direct neighbors
+            newIP = senderAddr.toString();
+            newPort = senderPort;
+            QHostInfo::lookupHost(senderAddr.toString(), 
+                this, SLOT(lookedUp(QHostInfo)));
+
+            /*
             // update it to the peer list
             Peer peer(senderAddr.toString(), senderAddr, senderPort);
             peerList->append(peer);
@@ -552,6 +569,7 @@ gotRecvMessage() {
             // update it to the list view
             addrPortStrList.append(senderAddr.toString() + ":" + QString::number(senderPort));
             ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+            */
         }
 
         // record the last ip and port info
@@ -618,6 +636,9 @@ gotRecvMessage() {
             QString recvOrigin = recvMessage.value("Origin").toString();
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
 
+            // debug
+            // textview->append(recvOrigin + " > " + recvMessage.value("ChatText").toString());
+
             //ACK
             sendStatusMsg(recvOrigin, recvSeqNo + 1, senderAddr, senderPort);
 
@@ -633,9 +654,7 @@ gotRecvMessage() {
             }
 
             // NAT punching If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
-            // LOOKUP
-            if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort"))
-            {
+            if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort")) {
                 QString recvLastIP = recvMessage.value("LastIP").toString();
                 quint16 recvLastPort = recvMessage.value("LastPort").toInt();
                 QString ipaddr_port = recvLastIP + ":" + QString::number(recvLastPort);
@@ -644,16 +663,13 @@ gotRecvMessage() {
                     if (peerList->at(i).getIP() == QHostAddress(recvLastIP) && peerList->at(i).getPort() == recvLastPort)
                         containsPeer = true;
                 }
-                /*
-                qDebug() << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-                qDebug() << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-                qDebug() << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-                qDebug() << !addrPortStrList.contains(ipaddr_port);
-                qDebug() << (containsPeer == false) ;
-                qDebug() << (QHostAddress(recvLastIP) != QHostAddress::LocalHost);
-                qDebug() <<  (recvLastPort != sockRecv->getMyPort());
-                */
                 if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort())) {
+                    // LOOKUP
+                    newIP = recvLastIP;
+                    newPort = recvLastPort;
+                    QHostInfo::lookupHost(newIP, this, SLOT(lookedUp(QHostInfo)));
+
+                    /*
                     // update it to the peer list
                     Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
                     peerList->append(peer);
@@ -661,6 +677,7 @@ gotRecvMessage() {
                     // update it to the list view
                     addrPortStrList.append(ipaddr_port);
                     ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+                    */
                 }
             }
 
@@ -717,9 +734,19 @@ gotRecvMessage() {
             QString recvOrigin = recvMessage.value("Origin").toString();
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
 
+            // update the nextHopTable
+            if (recvOrigin != *myOrigin) {
+                updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
+                nextHopTable->insert(recvOrigin, QPair<QHostAddress, quint16>(senderAddr, senderPort));
+                // Add it to the All dest list view if not exist
+                if (!originStrList.contains(recvOrigin)) {
+                    originStrList.append(recvOrigin);
+                    ((QStringListModel*) originListView->model())->setStringList(originStrList);
+                }
+            }
+
             if (recvOrigin != *myOrigin) {
                 // If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
-                // LOOKUP
                 if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort")) {
                     QString recvLastIP = recvMessage.value("LastIP").toString();
                     quint16 recvLastPort = recvMessage.value("LastPort").toInt();
@@ -730,6 +757,12 @@ gotRecvMessage() {
                             containsPeer = true;
                     }
                     if (!addrPortStrList.contains(ipaddr_port) && containsPeer == false && (QHostAddress(recvLastIP) != QHostAddress::LocalHost || recvLastPort != sockRecv->getMyPort())) {
+                        // LOOKUP
+                        newIP = recvLastIP;
+                        newPort = recvLastPort;
+                        QHostInfo::lookupHost(newIP, this, SLOT(lookedUp(QHostInfo)));
+
+                        /*
                         // update it to the peer list
                         Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
                         peerList->append(peer);
@@ -737,6 +770,7 @@ gotRecvMessage() {
                         // update it to the list view
                         addrPortStrList.append(ipaddr_port);
                         ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
+                        */
                     }
                 }
 
@@ -1238,7 +1272,7 @@ sendSearchRequest(const QString origin, const QString search, const quint32 budg
     qint64 int64Status = sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
 
-    // textview->append("send search");
+    textview->append("send search");
 
     delete message;
     delete bytearrayToSend;
