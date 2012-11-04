@@ -44,6 +44,7 @@ PeersterDialog::
 PeersterDialog() {
     // gossip messaging-------------------------------------------------
 
+    gossipTitle = new QLabel("Gossip Chat Room", this);
     // generate myOrigin node ID (NID)
     qsrand(time(0));
     myOrigin = new QString(tr("Tian") + QString::number(qrand()));
@@ -171,7 +172,8 @@ PeersterDialog() {
 	// Lay out the widgets to appear in the main window.----------------
 	layout = new QGridLayout();
     // first column 
-	layout->addWidget(textview, 0, 0, 13, 1);
+    layout->addWidget(gossipTitle, 0, 0);
+	layout->addWidget(textview, 1, 0, 13, 1);
 	layout->addWidget(textedit, 14, 0, 1, 1);
     // second column
     layout->addWidget(destListLabel, 0, 17);
@@ -260,7 +262,10 @@ updateGossipQueue(const QString origin, const quint32 seqNo, const QString host,
 }
 
 // ---------------------------------------------------------------------
-//
+// every time the Peester trying to send its new message, it enqueue it into
+// gossipQueue. Then this function will be called periodically until the Budget
+// exceeds 10 or Peerster received an ACK (status message with a sequence number
+// +1)
 void PeersterDialog::
 updateGossipQueue() {
     if (!gossipQueue->isEmpty()) {
@@ -295,6 +300,9 @@ updateGossipQueue() {
 
 // ---------------------------------------------------------------------
 // look up the host 
+// it should be called every time Peerster wants to add a new direct neighbor,
+// because it have to transform hostname to IP address. So the only types stored
+// in the peerList and direct neighbor list view are IP address.
 void PeersterDialog::
 lookedUp(const QHostInfo& host) {
     // Check whether there are hosts
@@ -332,7 +340,7 @@ lookedUp(const QHostInfo& host) {
 }
 
 // ---------------------------------------------------------------------
-// for look up addr:port pairs given by the arguments
+// for look up addr:port pairs given by the arguments "./peerster hostname:port"
 // before running the program
 void PeersterDialog::
 lookedUpBeforeInvoke(const QHostInfo& host) {
@@ -364,7 +372,7 @@ lookedUpBeforeInvoke(const QHostInfo& host) {
 }
     
 // --------------------------------------------------------------------
-// it is called when input IP:port in the line edit
+// it is called when input IP:port in the line edit and press return
 void PeersterDialog::
 addrPortAdded() {
     QString inputAddrPort = addAddrPort->text();
@@ -925,12 +933,12 @@ gotRecvMessage() {
             } else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) { 
                 recvMessage.insert("HopLimit", (quint32)(recvMessage.value("HopLimit").toInt()-1));
 
-                // Serialize 
+                // serialize 
                 QByteArray *bytearrayToSend = new QByteArray();
                 QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
                 bytearrayStreamOut << recvMessage;
 
-                // Send the datagram 
+                // send the datagram 
                 if (nextHopTable->contains(dest)) {
                     QHostAddress host = nextHopTable->value(dest).first;
                     quint16 port = nextHopTable->value(dest).second;
@@ -1004,7 +1012,6 @@ gotRecvMessage() {
             }
         }
     }
-
 }
 
 // ---------------------------------------------------------------------

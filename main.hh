@@ -126,6 +126,7 @@ public slots:
 
 private:
     // gossip messaging -------------------------------------------------
+    QLabel *gossipTitle;
 	QGridLayout *layout;
     // send message when returen pressed
     bool eventFilter(QObject *obj, QEvent *ev); 
