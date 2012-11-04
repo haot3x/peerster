@@ -208,6 +208,7 @@ PeersterDialog() {
     connect(timerForRM , SIGNAL(timeout()), 
         this, SLOT(broadcastRM()));
     timerForRM->start(10000);
+    timerForAck = NULL;
 
     // Add hostname:port or ipaddr:port 
     connect(addAddrPort, SIGNAL(returnPressed()),
@@ -569,15 +570,6 @@ gotRecvMessage() {
             QHostInfo::lookupHost(senderAddr.toString(), 
                 this, SLOT(lookedUp(QHostInfo)));
 
-            /*
-            // update it to the peer list
-            Peer peer(senderAddr.toString(), senderAddr, senderPort);
-            peerList->append(peer);
-
-            // update it to the list view
-            addrPortStrList.append(senderAddr.toString() + ":" + QString::number(senderPort));
-            ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
-            */
         }
 
         // record the last ip and port info
@@ -677,15 +669,6 @@ gotRecvMessage() {
                     newPort = recvLastPort;
                     QHostInfo::lookupHost(newIP, this, SLOT(lookedUp(QHostInfo)));
 
-                    /*
-                    // update it to the peer list
-                    Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
-                    peerList->append(peer);
-
-                    // update it to the list view
-                    addrPortStrList.append(ipaddr_port);
-                    ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
-                    */
                 }
             }
 
@@ -770,15 +753,6 @@ gotRecvMessage() {
                         newPort = recvLastPort;
                         QHostInfo::lookupHost(newIP, this, SLOT(lookedUp(QHostInfo)));
 
-                        /*
-                        // update it to the peer list
-                        Peer peer(tr("Unknown Host"), QHostAddress(recvLastIP), recvLastPort);
-                        peerList->append(peer);
-
-                        // update it to the list view
-                        addrPortStrList.append(ipaddr_port);
-                        ((QStringListModel*) addrPortListView->model())->setStringList(addrPortStrList);
-                        */
                     }
                 }
 
@@ -788,13 +762,6 @@ gotRecvMessage() {
                     return;
                 else { // It is a new routing message I have not heard of
                     // TODO  Exchange my routing message 
-                    /*
-                    QString fwdInfo = *myOrigin + "[Ori||Seq]" + QString::number(1)
-                        + "[-ADDRIS>]" + senderAddr.toString()
-                        + "[-PORTIS>]" + QString::number(senderPort)
-                        + "[-METYPE>]" + "RM";
-                    fwdMessage(fwdInfo);
-                    */
 
                     // update the nextHopTable
                     updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
