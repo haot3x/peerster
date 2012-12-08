@@ -42,6 +42,8 @@ bind() {
 PeersterDialog::
 PeersterDialog() {
     // onion routing----------------------------------------------------
+    if(!QCA::isSupported("aes128-cbc-pkcs7"))
+        qDebug() << "tragedy";
     seckey = QCA::KeyGenerator().createRSA(1024);
     if(seckey.isNull()) {
         qDebug() << "Failed to make private RSA key";
@@ -946,27 +948,47 @@ gotRecvMessage() {
         }
 
         // if it is a encrypted onion private message
-        if (recvMessage.contains("ChatText") && recvMessage.size() == 1) {
+        if (recvMessage.contains("Envelop") && recvMessage.contains("EncryptedKey") && recvMessage.contains("IV") ) {
             qDebug() << "#### encrypted message received";
-            // decrypt
-            QCA::SecureArray envelopSA(recvMessage.value("ChatText").toByteArray());
+
+            // decrypt key
+            QCA::SecureArray envelopSA(recvMessage.value("EncryptedKey").toByteArray());
             QCA::SecureArray decrypt;
             if (0 == seckey.decrypt(envelopSA, &decrypt, QCA::EME_PKCS1_OAEP)) 
                 qDebug() << "Error decrypting";
-            QByteArray envelopBA(envelopSA.toByteArray());
+            QCA::SymmetricKey envelopKey (decrypt.toByteArray());
+
+            // decrypt envelop
+            QCA::InitializationVector iv(recvMessage.value("IV").toByteArray());
+            QCA::Cipher dc(QString("aes128"),QCA::Cipher::CBC,
+                       QCA::Cipher::DefaultPadding,
+                       QCA::Decode,
+                       envelopKey, iv);
+            //printf("One step decryption using AES128: %s\n",
+            //   QCA::SecureArray(dc.process(cipherText)).data() );
+            QByteArray envelopBA(QCA::SecureArray(dc.process(QCA::SecureArray(recvMessage.value("Envelop").toByteArray()))).toByteArray());
+
             // deserialize
             QVariantMap envelop;
             QDataStream bs(&envelopBA, QIODevice::ReadOnly);
             bs >> envelop;
             // TODO why it is vacant?
-            qDebug() << envelop;
-            if (envelop.contains("Dest") && envelop.contains("ChatText")) {
+            qDebug() << envelop.size();
+            if (envelop.contains("Dest")) {
                 // it is not sent to me 
+                textview->append("Forward Envelop");
+
                 QString dest = envelop.value("Dest").toString();
                 if (nextHopTable->contains(dest)) {
                     QHostAddress host = nextHopTable->value(dest).first;
-                    quint16 port = nextHopTable->value(dest).second;
-                    qint64 int64Status = sockRecv->writeDatagram(envelop.value("ChatText").toByteArray(), host, port);
+                    quint16 port = nextHopTable->take(dest).second;
+
+                    // serialize
+                    QByteArray ba;
+                    QDataStream ds(&ba, QIODevice::WriteOnly);
+                    ds << envelop;
+
+                    qint64 int64Status = sockRecv->writeDatagram(ba, host, port);
                     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
                     qDebug() << "PM" << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
                 }
@@ -1137,29 +1159,61 @@ gotReturnPressed() {
         QStringList path = upperP2P->nextHopTable->getPathNIDs(dest);
         QStringList keys = upperP2P->nextHopTable->getPathKeys(dest);
         privateMessageMap.insert("ChatText", textedit->toPlainText());
+        qDebug() << textedit->toPlainText();
         do {
             // serialize 
             QByteArray ba;
             QDataStream bs(&ba, QIODevice::WriteOnly);
             bs << privateMessageMap;
-            // encrypt
-            QCA::SecureArray sa(ba);
+            qDebug() << "ba.size()=" << ba.size();
+
+            // encrypt ChatText with symmetric key
+            if(!QCA::isSupported("aes128-cbc-pkcs7")) {
+                qDebug() << "AES128-CBC not supported!\n";
+                return;
+            }
+            QCA::SymmetricKey textKey(16);
+            QCA::InitializationVector iv(16);
+            QCA::Cipher cipher(QString("aes128"),QCA::Cipher::CBC,
+                       QCA::Cipher::DefaultPadding,
+                       QCA::Encode,
+                       textKey, iv);
+            QCA::SecureArray u = cipher.update(ba);
+            if (!cipher.ok()) {
+              printf("Update failed\n");
+            }
+            QCA::SecureArray f = cipher.final();
+            if (!cipher.ok()) {
+              printf("Final failed\n");
+            }
+            QCA::SecureArray cipherText = u.append(f);
+            // add cipher text to privateMessageMap
+            privateMessageMap.clear();
+            privateMessageMap.insert("Envelop", cipherText.toByteArray());
+            privateMessageMap.insert("IV", iv.toByteArray());
+
+            // encrypt textKey with asymmetric key
+            QCA::SecureArray sa(textKey.toByteArray());
+            qDebug() << "sa.size()=" << sa.size();
             QCA::ConvertResult conversionResult;
             QCA::PublicKey pk = QCA::PublicKey::fromPEM(keys.first(), &conversionResult);
+            qDebug() << "MAX:" << pk.maximumEncryptSize(QCA::EME_PKCS1_OAEP);
             keys.pop_front();
             if (! QCA::ConvertGood == conversionResult)
                 qDebug() << "Public key read failed";
-            QCA::SecureArray cipherText = pk.encrypt(sa, QCA::EME_PKCS1_OAEP);
-            if (cipherText.isEmpty()) 
+            QCA::SecureArray cipheredKey = pk.encrypt(sa, QCA::EME_PKCS1_OAEP);
+            if (cipheredKey.isEmpty()) 
                 qDebug() << "Error encrypting";
+            qDebug() << "cipheredKey.size()=" << cipheredKey.size();
+            // add ciphered key to privateMessageMap
+            privateMessageMap.insert("EncryptedKey", cipheredKey.toByteArray());
 
-            privateMessageMap.clear();
-            privateMessageMap.insert("ChatText", cipherText.toByteArray());
             if (keys.length() != 0) {
                 privateMessageMap.insert("Dest", path.first());
                 path.pop_front();
             } 
         } while (keys.length());
+        
     } else {
         // if it can not be encrypted with onions
         // it will be sent as plaintext
@@ -1168,12 +1222,12 @@ gotReturnPressed() {
         privateMessageMap.insert("HopLimit", (quint32)10);
     }
 
-    if (privateMessageMap.contains("Dest")) exit(-1);
-
     // Serialize 
+    qDebug() << "privateMessageMap: " << privateMessageMap.size();
     QByteArray *bytearrayToSend = new QByteArray();
     QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
     bytearrayStreamOut << privateMessageMap;
+    qDebug() << "bytearrayToSend: " << bytearrayToSend->size();
 
     // Send the datagram 
 

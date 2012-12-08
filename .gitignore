@@ -4,3 +4,4 @@ moc_*
 peerster
 recv_blocks/
 tmp_blocks/
+finalProject/.*
