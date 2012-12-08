@@ -18,19 +18,19 @@ Overview
 
 To implement onion routing in peerster, I am going to follow these steps:
 
-    1. Each peerster will generate a public key and private key when it is first
-    created. 
-    1. Each peerster can request and receive a public key from an another one.
-    1. When a peerster wants to forward a new routing message, it will attach its
-    own node ID and public keys to the message.
-    1. When a peerster receives a routing message, it will record the origin
-    node ID as well as the path and public keys.
-    1. When a peerster wants to send a private message with onion routing, it
-    first reads the path to the destination node, then encrypts the message with
-    public keys layer by layer for each node along the path, and finally sends
-    the message to the entry node.
-    1. The intermediary node in the path receives the private message, and
-    decrypts the message with its own private key. If it is the destination
-    node, display the message. If it exceeds the hop limit, it would be
-    disposed. Otherwise, it will be sends to the next node in the path.
+1. Each peerster will generate a public key and private key when it is first
+created. 
+2. Each peerster can request and receive a public key from an another one.
+3. When a peerster wants to forward a new routing message, it will attach its
+own node ID and public keys to the message.
+4. When a peerster receives a routing message, it will record the origin
+node ID as well as the path and public keys.
+5. When a peerster wants to send a private message with onion routing, it
+first reads the path to the destination node, then encrypts the message with
+public keys layer by layer for each node along the path, and finally sends
+the message to the entry node.
+6. The intermediary node in the path receives the private message, and
+decrypts the message with its own private key. If it is the destination
+node, display the message. If it exceeds the hop limit, it would be
+disposed. Otherwise, it will be sends to the next node in the path.
 

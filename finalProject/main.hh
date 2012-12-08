@@ -32,6 +32,8 @@
 #include <QtCrypto>
 #include <QIODevice>
 #include <QQueue>
+#include <QApplication>
+#include <QStack>
 
 
 // ----------------------------------------------------------------------
@@ -41,6 +43,7 @@ class Peer;
 class PeersterDialog;
 class PrivateMessage;
 class FileMetaData;
+class NextHopTable;
 
 // ----------------------------------------------------------------------
 // upd socket
@@ -55,6 +58,7 @@ public:
 
 	// Bind this socket to a Peerster-specific default port.
 	bool bind();
+    QHostAddress myAddress() { return localAddress();}
 
 private:
 	int myPort, myPortMin, myPortMax;
@@ -104,7 +108,7 @@ public slots:
     bool updateGossipQueue(const QString origin, const quint32 seqNo, const QString host, const quint16 port); // delete special element
 
     // point to point messaging
-    void sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress host, const quint16 port);
+    void sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress host, const quint16 port, QStringList nidStrList, QStringList keyStrList) ;
     void broadcastRM();
     void openPrivateMessageWin(const QModelIndex&);
 
@@ -205,7 +209,7 @@ private:
     QVariantMap *updateRoutOriSeqMap;
     quint32 routMessSeqNo;
 
-    // nextHopTable: next hop table is used to store all direct neighbors
+    // nextHopTable: next hop table is used to store routing information
     //        =========================================
     //   QHash<QString , QPair<QHostAddress, quint16> >
     //        +--------+-------------------+----------+
@@ -214,7 +218,7 @@ private:
     //         ...
     //        |Node ID |        Node IP    | Node Port|
     //        =========================================
-    QHash<QString, QPair<QHostAddress, quint16> > *nextHopTable;
+    NextHopTable *nextHopTable;
 
     // information about the last node who send me the message
     QHostAddress* lastIP;
@@ -240,6 +244,10 @@ private:
     QStringList *searchResultsStringList;
     QStringListModel *searchResultsStringListModel;
     QVariantMap *searchResults;
+
+    // onion routing----------------------------------------------------
+    QCA::PublicKey pubkey;
+    QCA::PrivateKey seckey;
 };
 
 // ----------------------------------------------------------------------
@@ -334,5 +342,18 @@ private:
     QString originNID;
 };
 
+// ----------------------------------------------------------------------
+// store the path for peers in the nextHopTable
+class NextHopTable: public QHash<QString, QPair<QHostAddress, quint16> > {
+private:
+    QHash<QString, QStringList> pathNodeIDs;
+    QHash<QString, QStringList> pathKeys;
+public:
+    bool hasPath(QString NID) { return pathNodeIDs.contains(NID)&&pathKeys.contains(NID);}
+    void insertPathNIDs(QString NID, QStringList pathIDs) {pathNodeIDs.insert(NID, pathIDs);}
+    void insertPathKeys(QString NID, QStringList pk) {pathKeys.insert(NID, pk);}
+    QStringList getPathNIDs(QString NID) {return pathNodeIDs.value(NID);}
+    QStringList getPathKeys(QString NID) {return pathKeys.value(NID);}
+};
 
 #endif // PEERSTER_MAIN_HH

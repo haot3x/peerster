@@ -1,6 +1,5 @@
 #include <unistd.h>
 
-#include <QApplication>
 #include <QDebug>
 
 #include "main.hh"
@@ -42,13 +41,22 @@ bind() {
 // PeersterDialog window constructor
 PeersterDialog::
 PeersterDialog() {
-    // gossip messaging-------------------------------------------------
+    // onion routing----------------------------------------------------
+    seckey = QCA::KeyGenerator().createRSA(1024);
+    if(seckey.isNull()) {
+        qDebug() << "Failed to make private RSA key";
+    }
+    pubkey = seckey.toPublicKey();
+    // check if the key can encrypt 
+    if(!pubkey.canEncrypt()) {
+        qDebug() << "Error: this kind of key cannot encrypt";
+    }
 
+    // gossip messaging-------------------------------------------------
     gossipTitle = new QLabel("Gossip Chat Room", this);
     // generate myOrigin node ID (NID)
     qsrand(time(0));
     myOrigin = new QString(tr("Tian") + QString::number(qrand()));
-	setWindowTitle("Peerster: " + *myOrigin);
 
     // sequence number for gossip messages
     SeqNo = 1;
@@ -59,6 +67,8 @@ PeersterDialog() {
 		exit(1);
     connect(sockRecv, SIGNAL(readyRead()),
         this, SLOT(gotRecvMessage()));
+
+	setWindowTitle("Peerster: " + *myOrigin + " (" + sockRecv->myAddress().toString() + ":" + QString::number(sockRecv->getMyPort()) + ")");
 
     recvMessageMap = new QVariantMap(); 
     updateStatusMap = new QVariantMap(); 
@@ -79,7 +89,7 @@ PeersterDialog() {
     gossipQueue = new QQueue<QVariantMap>;
 
     // point to point messaging-----------------------------------------
-    nextHopTable = new QHash<QString, QPair<QHostAddress, quint16> >();
+    nextHopTable = new NextHopTable;
     updateRoutOriSeqMap = new QVariantMap();
     routMessSeqNo = 1;
 
@@ -392,7 +402,9 @@ addrPortAdded() {
 void PeersterDialog::
 broadcastRM() {
     for (int i = 0; i < peerList->size(); i++) {
-        sendRoutingMsg(*myOrigin, routMessSeqNo, peerList->at(i).getIP(), peerList->at(i).getPort());
+        QStringList nidStrList;
+        QStringList newKeyStrList;
+        sendRoutingMsg(*myOrigin, routMessSeqNo, peerList->at(i).getIP(), peerList->at(i).getPort(), nidStrList, newKeyStrList);
     }
     routMessSeqNo ++;
 }
@@ -516,7 +528,7 @@ sendStatusMsg(const QString origin, const quint32 seqNo, const QHostAddress host
 // ---------------------------------------------------------------------
 //
 void PeersterDialog::
-sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress host, const quint16 port) {
+sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress host, const quint16 port, QStringList nidStrList, QStringList keyStrList) {
     QVariantMap *message = new QVariantMap();
     message->insert("Origin", origin);
     message->insert("SeqNo", seqNo);
@@ -526,6 +538,14 @@ sendRoutingMsg(const QString origin, const quint32 seqNo, const QHostAddress hos
         message->insert(tr("LastIP"), lastIP->toString());
         message->insert(tr("LastPort"), lastPort);
     }
+    
+    // NID list
+    nidStrList.append(*myOrigin);
+    message->insert(("Path"), nidStrList);
+
+    // key list 
+    keyStrList.append(pubkey.toPEM());
+    message->insert(("PathKeys"), keyStrList);
 
     // Serialize 
     QByteArray *bytearrayToSend = new QByteArray();
@@ -654,6 +674,7 @@ gotRecvMessage() {
             }
 
             // NAT punching If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
+            /* deprecated for onion routing
             if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort")) {
                 QString recvLastIP = recvMessage.value("LastIP").toString();
                 quint16 recvLastPort = recvMessage.value("LastPort").toInt();
@@ -671,6 +692,7 @@ gotRecvMessage() {
 
                 }
             }
+            */
 
             // if I have contacted this NID
             if (updateStatusMap->contains(recvOrigin)) {
@@ -721,23 +743,15 @@ gotRecvMessage() {
 
         // It is a Routing Message (RM)
         if (!recvMessage.contains("ChatText") && recvMessage.contains("Origin") && recvMessage.contains("SeqNo")) {
-            qDebug() << "received routing message from " << senderPort;
+            qDebug() << "received routing message from " << senderAddr << senderPort;
             QString recvOrigin = recvMessage.value("Origin").toString();
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
+            qDebug() << "NID: " << recvOrigin;
 
-            // update the nextHopTable
-            if (recvOrigin != *myOrigin) {
-                updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
-                nextHopTable->insert(recvOrigin, QPair<QHostAddress, quint16>(senderAddr, senderPort));
-                // Add it to the All dest list view if not exist
-                if (!originStrList.contains(recvOrigin)) {
-                    originStrList.append(recvOrigin);
-                    ((QStringListModel*) originListView->model())->setStringList(originStrList);
-                }
-            }
 
             if (recvOrigin != *myOrigin) {
                 // If there new possible neighbors identified by lastIp and lastPort, then add them to direct neighbor
+                /* deprecated for onion routing 
                 if (recvMessage.contains("LastIP") && recvMessage.contains("LastPort")) {
                     QString recvLastIP = recvMessage.value("LastIP").toString();
                     quint16 recvLastPort = recvMessage.value("LastPort").toInt();
@@ -755,17 +769,27 @@ gotRecvMessage() {
 
                     }
                 }
-
+                */
 
                 quint32 myRoutSeqNo = updateRoutOriSeqMap->value(recvOrigin).toInt();
-                if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo) // It is the routing message I have received
+                qDebug() << "recvSeqNo=" << recvSeqNo; 
+                if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo) {// It is the routing message I have received
+                    qDebug() << "I have received before";
                     return;
-                else { // It is a new routing message I have not heard of
+                } else { // It is a new routing message I have not heard of
+                    if (recvMessage.contains("PathKeys") )
+                        qDebug() << "Key number:" << QString::number(recvMessage.value("PathKeys").toStringList().size());
                     // TODO  Exchange my routing message 
+                    qDebug() << "good";
 
                     // update the nextHopTable
                     updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
                     nextHopTable->insert(recvOrigin, QPair<QHostAddress, quint16>(senderAddr, senderPort));
+                    // update Path and PathKeys for onion routing 
+                    if (recvMessage.contains("Path") && recvMessage.contains("PathKeys") ){
+                        nextHopTable->insertPathNIDs(recvOrigin, recvMessage.value("Path").toStringList());
+                        nextHopTable->insertPathKeys(recvOrigin, recvMessage.value("PathKeys").toStringList());
+                    }
                     // Add it to the All dest list view if not exist
                     if (!originStrList.contains(recvOrigin)) {
                         originStrList.append(recvOrigin);
@@ -774,7 +798,9 @@ gotRecvMessage() {
                     // broadcast message
                     for (int i = 0; i < peerList->size(); i++) {
                         Peer destPeer = peerList->at(i);
-                        sendRoutingMsg(recvOrigin, recvSeqNo, destPeer.getIP(), destPeer.getPort());
+                        QStringList newKeyStrList(recvMessage.value("PathKeys").toStringList());
+                        QStringList nidStrList(recvMessage.value("Path").toStringList());
+                        sendRoutingMsg(recvOrigin, recvSeqNo, destPeer.getIP(), destPeer.getPort(), nidStrList, newKeyStrList);
                     }
                 }
             }
@@ -787,7 +813,7 @@ gotRecvMessage() {
             if (dest  == *myOrigin) {
                 if (recvMessage.contains("ChatText"))
                     // if it is a private message
-                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString());
+                    textview->append(senderAddr.toString() + ":" + QString::number(senderPort) + " > " + recvMessage.value("ChatText").toString() + recvMessage.value("HopLimit").toString());
                 if (recvMessage.contains("Origin") && recvMessage.contains("BlockRequest")) {
                     // if it is a block request message
                     QByteArray requestHash = recvMessage.value("BlockRequest").toByteArray();
@@ -896,9 +922,10 @@ gotRecvMessage() {
                         }
                     }
                 }
-            // if it is not sent to me and -noforward is not set
             } else if (recvMessage.value("HopLimit").toInt() > 0 && isNoForward == false) { 
+                // if it is not sent to me and -noforward is not set
                 recvMessage.insert("HopLimit", (quint32)(recvMessage.value("HopLimit").toInt()-1));
+                recvMessage.insert("ChatText", recvMessage.value("ChatText").toString()+tr("|")+*myOrigin);
 
                 // serialize 
                 QByteArray *bytearrayToSend = new QByteArray();
@@ -917,6 +944,9 @@ gotRecvMessage() {
                 delete bytearrayToSend;
             }
         }
+
+        // if it is a encrypted onion private message
+        if (recvMessage.contains("ChatText") && recvMessage.size() == 1) {
 
         // if it is a search request message
         if (recvMessage.contains("Origin") && recvMessage.contains("Search") && recvMessage.contains("Budget")) {
@@ -1070,10 +1100,44 @@ eventFilter(QObject *obj, QEvent *event) {
 // send private message
 void PrivateMessage::
 gotReturnPressed() {
+    // get destination IP:port
+    QHostAddress host = upperP2P->nextHopTable->value(dest).first;
+    quint16 port = upperP2P->nextHopTable->value(dest).second;
+
     QVariantMap privateMessageMap;
-    privateMessageMap.insert("Dest", dest);
-    privateMessageMap.insert("ChatText", textedit->toPlainText());
-    privateMessageMap.insert("HopLimit", (quint32)10);
+    if (upperP2P->nextHopTable->hasPath(dest)) {
+        // if it can be encrypted with onions
+        QStringList path = upperP2P->nextHopTable->getPathNIDs(dest);
+        QStringList keys = upperP2P->nextHopTable->getPathKeys(dest);
+        privateMessageMap.insert("ChatText", textedit->toPlainText());
+        do {
+            // serialize 
+            QByteArray ba;
+            QDataStream bs(&ba, QIODevice::WriteOnly);
+            bs << privateMessageMap;
+            // encrypt
+            QCA::SecureArray sa(ba);
+            QCA::ConvertResult conversionResult;
+            QCA::PublicKey pk = QCA::PublicKey::fromPEM(keys.first(), &conversionResult);
+            keys.pop_front();
+            if (! QCA::ConvertGood == conversionResult)
+                qDebug() << "Public key read failed";
+            QCA::SecureArray cipherText = pk.encrypt(sa, QCA::EME_PKCS1_OAEP);
+            if (cipherText.isEmpty()) 
+                qDebug() << "Error encrypting";
+
+            privateMessageMap.clear();
+            privateMessageMap.insert("ChatText", cipherText.toByteArray());
+            privateMessageMap.insert("Dest", path.first());
+            path.pop_front();
+        } while (keys.length());
+    } else {
+        // if it can not be encrypted with onions
+        // it will be sent as plaintext
+        privateMessageMap.insert("Dest", dest);
+        privateMessageMap.insert("ChatText", textedit->toPlainText());
+        privateMessageMap.insert("HopLimit", (quint32)10);
+    }
 
     // Serialize 
     QByteArray *bytearrayToSend = new QByteArray();
@@ -1081,8 +1145,6 @@ gotReturnPressed() {
     bytearrayStreamOut << privateMessageMap;
 
     // Send the datagram 
-    QHostAddress host = upperP2P->nextHopTable->value(dest).first;
-    quint16 port = upperP2P->nextHopTable->value(dest).second;
 
     qint64 int64Status = upperP2P->sockRecv->writeDatagram(*bytearrayToSend, host, port);
     if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
