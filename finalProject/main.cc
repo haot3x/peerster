@@ -596,7 +596,7 @@ gotRecvMessage() {
         *lastIP = senderAddr;
         lastPort = senderPort;
 
-        // de-serialize
+        // deserialize
         QVariantMap recvMessage;
         QDataStream bytearrayStreamIn(bytearrayRecv, QIODevice::ReadOnly);
         bytearrayStreamIn >> recvMessage;
@@ -746,7 +746,7 @@ gotRecvMessage() {
             qDebug() << "received routing message from " << senderAddr << senderPort;
             QString recvOrigin = recvMessage.value("Origin").toString();
             quint32 recvSeqNo = recvMessage.value("SeqNo").toInt();
-            qDebug() << "NID: " << recvOrigin;
+            //qDebug() << "NID: " << recvOrigin;
 
 
             if (recvOrigin != *myOrigin) {
@@ -772,15 +772,15 @@ gotRecvMessage() {
                 */
 
                 quint32 myRoutSeqNo = updateRoutOriSeqMap->value(recvOrigin).toInt();
-                qDebug() << "recvSeqNo=" << recvSeqNo; 
+                //qDebug() << "recvSeqNo=" << recvSeqNo; 
                 if (updateRoutOriSeqMap->contains(recvOrigin) && myRoutSeqNo == recvSeqNo) {// It is the routing message I have received
-                    qDebug() << "I have received before";
+                    //qDebug() << "I have received before";
                     return;
                 } else { // It is a new routing message I have not heard of
                     if (recvMessage.contains("PathKeys") )
-                        qDebug() << "Key number:" << QString::number(recvMessage.value("PathKeys").toStringList().size());
+                        //qDebug() << "Key number:" << QString::number(recvMessage.value("PathKeys").toStringList().size());
                     // TODO  Exchange my routing message 
-                    qDebug() << "good";
+                    //qDebug() << "good";
 
                     // update the nextHopTable
                     updateRoutOriSeqMap->insert(recvOrigin, recvSeqNo);
@@ -947,6 +947,33 @@ gotRecvMessage() {
 
         // if it is a encrypted onion private message
         if (recvMessage.contains("ChatText") && recvMessage.size() == 1) {
+            qDebug() << "#### encrypted message received";
+            // decrypt
+            QCA::SecureArray envelopSA(recvMessage.value("ChatText").toByteArray());
+            QCA::SecureArray decrypt;
+            if (0 == seckey.decrypt(envelopSA, &decrypt, QCA::EME_PKCS1_OAEP)) 
+                qDebug() << "Error decrypting";
+            QByteArray envelopBA(envelopSA.toByteArray());
+            // deserialize
+            QVariantMap envelop;
+            QDataStream bs(&envelopBA, QIODevice::ReadOnly);
+            bs >> envelop;
+            // TODO why it is vacant?
+            qDebug() << envelop;
+            if (envelop.contains("Dest") && envelop.contains("ChatText")) {
+                // it is not sent to me 
+                QString dest = envelop.value("Dest").toString();
+                if (nextHopTable->contains(dest)) {
+                    QHostAddress host = nextHopTable->value(dest).first;
+                    quint16 port = nextHopTable->value(dest).second;
+                    qint64 int64Status = sockRecv->writeDatagram(envelop.value("ChatText").toByteArray(), host, port);
+                    if (int64Status == -1) qDebug() << "errors in writeDatagram"; 
+                    qDebug() << "PM" << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
+                }
+            } else if (envelop.contains("ChatText")) {
+                textview->append(envelop.value("ChatText").toString());
+            }
+        }
 
         // if it is a search request message
         if (recvMessage.contains("Origin") && recvMessage.contains("Search") && recvMessage.contains("Budget")) {
@@ -1128,8 +1155,10 @@ gotReturnPressed() {
 
             privateMessageMap.clear();
             privateMessageMap.insert("ChatText", cipherText.toByteArray());
-            privateMessageMap.insert("Dest", path.first());
-            path.pop_front();
+            if (keys.length() != 0) {
+                privateMessageMap.insert("Dest", path.first());
+                path.pop_front();
+            } 
         } while (keys.length());
     } else {
         // if it can not be encrypted with onions
@@ -1138,6 +1167,8 @@ gotReturnPressed() {
         privateMessageMap.insert("ChatText", textedit->toPlainText());
         privateMessageMap.insert("HopLimit", (quint32)10);
     }
+
+    if (privateMessageMap.contains("Dest")) exit(-1);
 
     // Serialize 
     QByteArray *bytearrayToSend = new QByteArray();
