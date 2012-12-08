@@ -11,7 +11,7 @@ next one, and the message also shall not be revealed to any intermediary node
 in the path.
 
 The implementation is based on the existing version of peerster, and will be
-applied to P2P private messaging and file block sending.
+applied to P2P private messaging.
 
 Overview
 -----------
