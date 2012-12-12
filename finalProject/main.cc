@@ -949,7 +949,7 @@ gotRecvMessage() {
 
         // if it is a encrypted onion private message
         if (recvMessage.contains("Envelop") && recvMessage.contains("EncryptedKey") && recvMessage.contains("IV") ) {
-            qDebug() << "#### encrypted message received";
+            //qDebug() << "#### encrypted message received";
 
             // decrypt key
             QCA::SecureArray envelopSA(recvMessage.value("EncryptedKey").toByteArray());
@@ -973,15 +973,15 @@ gotRecvMessage() {
             QDataStream bs(&envelopBA, QIODevice::ReadOnly);
             bs >> envelop;
             // TODO why it is vacant?
-            qDebug() << envelop.size();
+            //qDebug() << envelop.size();
             if (envelop.contains("Dest")) {
                 // it is not sent to me 
-                textview->append("Forward Envelop");
+                textview->append("Onion Routing> Forward Envelop");
 
                 QString dest = envelop.value("Dest").toString();
                 if (nextHopTable->contains(dest)) {
                     QHostAddress host = nextHopTable->value(dest).first;
-                    quint16 port = nextHopTable->take(dest).second;
+                    quint16 port = nextHopTable->value(dest).second;
 
                     // serialize
                     QByteArray ba;
@@ -993,7 +993,7 @@ gotRecvMessage() {
                     qDebug() << "PM" << " from " << sockRecv->getMyPort() <<" has been sent to " << port << "| size: " << int64Status;
                 }
             } else if (envelop.contains("ChatText")) {
-                textview->append(envelop.value("ChatText").toString());
+                textview->append("Onion Routing> " + envelop.value("ChatText").toString());
             }
         }
 
@@ -1159,13 +1159,13 @@ gotReturnPressed() {
         QStringList path = upperP2P->nextHopTable->getPathNIDs(dest);
         QStringList keys = upperP2P->nextHopTable->getPathKeys(dest);
         privateMessageMap.insert("ChatText", textedit->toPlainText());
-        qDebug() << textedit->toPlainText();
+        //qDebug() << textedit->toPlainText();
         do {
             // serialize 
             QByteArray ba;
             QDataStream bs(&ba, QIODevice::WriteOnly);
             bs << privateMessageMap;
-            qDebug() << "ba.size()=" << ba.size();
+            //qDebug() << "ba.size()=" << ba.size();
 
             // encrypt ChatText with symmetric key
             if(!QCA::isSupported("aes128-cbc-pkcs7")) {
@@ -1194,17 +1194,17 @@ gotReturnPressed() {
 
             // encrypt textKey with asymmetric key
             QCA::SecureArray sa(textKey.toByteArray());
-            qDebug() << "sa.size()=" << sa.size();
+            //qDebug() << "sa.size()=" << sa.size();
             QCA::ConvertResult conversionResult;
             QCA::PublicKey pk = QCA::PublicKey::fromPEM(keys.first(), &conversionResult);
-            qDebug() << "MAX:" << pk.maximumEncryptSize(QCA::EME_PKCS1_OAEP);
+            //qDebug() << "MAX:" << pk.maximumEncryptSize(QCA::EME_PKCS1_OAEP);
             keys.pop_front();
             if (! QCA::ConvertGood == conversionResult)
                 qDebug() << "Public key read failed";
             QCA::SecureArray cipheredKey = pk.encrypt(sa, QCA::EME_PKCS1_OAEP);
             if (cipheredKey.isEmpty()) 
                 qDebug() << "Error encrypting";
-            qDebug() << "cipheredKey.size()=" << cipheredKey.size();
+            //qDebug() << "cipheredKey.size()=" << cipheredKey.size();
             // add ciphered key to privateMessageMap
             privateMessageMap.insert("EncryptedKey", cipheredKey.toByteArray());
 
@@ -1223,11 +1223,11 @@ gotReturnPressed() {
     }
 
     // Serialize 
-    qDebug() << "privateMessageMap: " << privateMessageMap.size();
+    //qDebug() << "privateMessageMap: " << privateMessageMap.size();
     QByteArray *bytearrayToSend = new QByteArray();
     QDataStream bytearrayStreamOut(bytearrayToSend, QIODevice::WriteOnly);
     bytearrayStreamOut << privateMessageMap;
-    qDebug() << "bytearrayToSend: " << bytearrayToSend->size();
+    //qDebug() << "bytearrayToSend: " << bytearrayToSend->size();
 
     // Send the datagram 
 
