@@ -34,6 +34,7 @@
 #include <QQueue>
 #include <QApplication>
 #include <QStack>
+#include <QMessageBox>
 
 
 // ----------------------------------------------------------------------

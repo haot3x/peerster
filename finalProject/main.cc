@@ -42,8 +42,6 @@ bind() {
 PeersterDialog::
 PeersterDialog() {
     // onion routing----------------------------------------------------
-    if(!QCA::isSupported("aes128-cbc-pkcs7"))
-        qDebug() << "tragedy";
     seckey = QCA::KeyGenerator().createRSA(1024);
     if(seckey.isNull()) {
         qDebug() << "Failed to make private RSA key";
@@ -1154,7 +1152,7 @@ gotReturnPressed() {
     quint16 port = upperP2P->nextHopTable->value(dest).second;
 
     QVariantMap privateMessageMap;
-    if (upperP2P->nextHopTable->hasPath(dest)) {
+    if (upperP2P->nextHopTable->hasPath(dest) && QCA::isSupported("aes128-cbc-pkcs7")) {
         // if it can be encrypted with onions
         QStringList path = upperP2P->nextHopTable->getPathNIDs(dest);
         QStringList keys = upperP2P->nextHopTable->getPathKeys(dest);
@@ -1168,10 +1166,6 @@ gotReturnPressed() {
             //qDebug() << "ba.size()=" << ba.size();
 
             // encrypt ChatText with symmetric key
-            if(!QCA::isSupported("aes128-cbc-pkcs7")) {
-                qDebug() << "AES128-CBC not supported!\n";
-                return;
-            }
             QCA::SymmetricKey textKey(16);
             QCA::InitializationVector iv(16);
             QCA::Cipher cipher(QString("aes128"),QCA::Cipher::CBC,
@@ -1563,6 +1557,12 @@ int main(int argc, char **argv) {
     QCA::Initializer qcainit;
 	// Initialize Qt toolkit
 	QApplication app(argc,argv);
+    if(!QCA::isSupported("aes128-cbc-pkcs7")) {
+        QMessageBox msgBox;
+        msgBox.setText("aes128-cbc-pkcs7 is not supported. Please install qca and qca-ossl.");
+        msgBox.exec();
+        exit(-1);
+    }
 
     PeersterDialog dialog;
 
