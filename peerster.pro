@@ -10,5 +10,15 @@ QT += network
 CONFIG += crypto
 
 # Input
+HEADERS += netsocket.hh
+HEADERS += peer.hh
+HEADERS += peersterdialog.hh
+HEADERS += privatemessage.hh
+HEADERS += filemetadata.hh
 HEADERS += main.hh
+
+SOURCES += netsocket.cc
+SOURCES += peersterdialog.cc
+SOURCES += privatemessage.cc
+SOURCES += filemetadata.cc
 SOURCES += main.cc
